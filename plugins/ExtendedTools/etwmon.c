@@ -153,6 +153,7 @@ TRACEHANDLE EtOpenEtwTrace(
     VOID
     )
 {
+    TRACEHANDLE traceHandle = INVALID_PROCESSTRACE_HANDLE;
     EVENT_TRACE_LOGFILE logFile;
 
     if (!(EtpTraceProperties && EtpActualKernelLoggerName))
@@ -164,7 +165,20 @@ TRACEHANDLE EtOpenEtwTrace(
     logFile.BufferCallback = EtEtwBufferCallback;
     logFile.EventRecordCallback = EtEtwEventCallback;
 
-    return OpenTrace(&logFile);
+    traceHandle = OpenTrace(&logFile);
+
+    if (traceHandle != INVALID_PROCESSTRACE_HANDLE)
+    {
+        EtSessionHandle = traceHandle;
+        EtpEtwActive = TRUE;
+    }
+    else
+    {
+        EtpEtwActive = FALSE;
+        EtSessionHandle = INVALID_PROCESSTRACE_HANDLE;
+    }
+
+    return traceHandle;
 }
 
 VOID EtStartEtwSession(
@@ -246,6 +260,16 @@ VOID EtFlushEtwSession(
     VOID
     )
 {
+    if (EtSessionHandle == INVALID_PROCESSTRACE_HANDLE)
+        return;
+
+    // Note: Using FLUSH controlcode to flush the session instead of the trace (e.g. when EtSessionHandle is NULL)
+    // causes memory/handle leaks starting with Windows 10. The ControlTraceW function will allocate a
+    // seperate trace session with GUID {3595ab5c-042a-4c8e-b942-2d059bfeb1b1} for the
+    // PrivateLoggerNotificationGuid forgetting to cleanup afterwards, creating new trace sessions and
+    // new handles during every call to ControlTraceW. Our default flush interval is 1-sec so this bug would leak
+    // an average 60 handles a second... We don't currently flush the session (only the trace)
+    // so make sure EtSessionHandle is valid before calling FLUSH. (dmex)
     EtEtwControlEtwSession(EVENT_TRACE_CONTROL_FLUSH);
 }
 
@@ -458,8 +482,6 @@ NTSTATUS EtEtwMonitorThreadStart(
 
         if (traceHandle != INVALID_PROCESSTRACE_HANDLE)
         {
-            EtpEtwActive = TRUE;
-
             while (!EtpEtwExiting && (result = ProcessTrace(&traceHandle, 1, NULL, NULL)) == ERROR_SUCCESS)
                 NOTHING;
 
