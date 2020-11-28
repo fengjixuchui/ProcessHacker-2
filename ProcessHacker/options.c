@@ -269,14 +269,13 @@ INT_PTR CALLBACK PhOptionsDialogProc(
     {
     case WM_INITDIALOG:
         {
-            OptionsTreeImageList = ImageList_Create(2, PH_SCALE_DPI(22), ILC_COLOR, 1, 1);
+            OptionsTreeImageList = ImageList_Create(2, PH_SCALE_DPI(22), ILC_MASK | ILC_COLOR, 1, 1);
             OptionsTreeControl = GetDlgItem(hwndDlg, IDC_SECTIONTREE);
             ContainerControl = GetDlgItem(hwndDlg, IDD_CONTAINER);
 
             PhSetApplicationWindowIcon(hwndDlg);
 
-            PhSetWindowStyle(GetDlgItem(hwndDlg, IDC_SEPARATOR), SS_OWNERDRAW, SS_OWNERDRAW);
-
+            //PhSetWindowStyle(GetDlgItem(hwndDlg, IDC_SEPARATOR), SS_OWNERDRAW, SS_OWNERDRAW);
             PhSetControlTheme(OptionsTreeControl, L"explorer");
             TreeView_SetExtendedStyle(OptionsTreeControl, TVS_EX_DOUBLEBUFFER, TVS_EX_DOUBLEBUFFER);
             TreeView_SetImageList(OptionsTreeControl, OptionsTreeImageList, TVSIL_NORMAL);
@@ -284,7 +283,7 @@ INT_PTR CALLBACK PhOptionsDialogProc(
 
             PhInitializeLayoutManager(&WindowLayoutManager, hwndDlg);
             PhAddLayoutItem(&WindowLayoutManager, OptionsTreeControl, NULL, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_BOTTOM);
-            PhAddLayoutItem(&WindowLayoutManager, GetDlgItem(hwndDlg, IDC_SEPARATOR), NULL, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_BOTTOM);
+            //PhAddLayoutItem(&WindowLayoutManager, GetDlgItem(hwndDlg, IDC_SEPARATOR), NULL, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_BOTTOM);
             PhAddLayoutItem(&WindowLayoutManager, ContainerControl, NULL, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_RIGHT | PH_ANCHOR_BOTTOM);
             PhAddLayoutItem(&WindowLayoutManager, GetDlgItem(hwndDlg, IDC_RESET), NULL, PH_ANCHOR_LEFT | PH_ANCHOR_BOTTOM);
             PhAddLayoutItem(&WindowLayoutManager, GetDlgItem(hwndDlg, IDC_CLEANUP), NULL, PH_ANCHOR_LEFT | PH_ANCHOR_BOTTOM);
@@ -306,6 +305,7 @@ INT_PTR CALLBACK PhOptionsDialogProc(
                 PhOptionsCreateSectionAdvanced(L"Advanced", PhInstanceHandle, MAKEINTRESOURCE(IDD_OPTADVANCED), PhpOptionsAdvancedDlgProc, NULL);
                 PhOptionsCreateSection(L"Highlighting", PhInstanceHandle, MAKEINTRESOURCE(IDD_OPTHIGHLIGHTING), PhpOptionsHighlightingDlgProc, NULL);
                 PhOptionsCreateSection(L"Graphs", PhInstanceHandle, MAKEINTRESOURCE(IDD_OPTGRAPHS), PhpOptionsGraphsDlgProc, NULL);
+                PhOptionsCreateSection(L"Plugins", PhInstanceHandle, MAKEINTRESOURCE(IDD_PLUGINS), PhPluginsDlgProc, NULL);
 
                 if (PhPluginsEnabled)
                 {
@@ -318,9 +318,6 @@ INT_PTR CALLBACK PhOptionsDialogProc(
 
                     PhInvokeCallback(PhGetGeneralCallback(GeneralCallbackOptionsWindowInitializing), &pointers);
                 }
-
-                // Add plugin options after initializing plugin callbacks (dmex)
-                PhOptionsCreateSection(L"Plugins", PhInstanceHandle, MAKEINTRESOURCE(IDD_PLUGINS), PhPluginsDlgProc, NULL);
 
                 PhOptionsEnterSectionView(section);
                 PhOptionsOnSize();
@@ -424,41 +421,41 @@ INT_PTR CALLBACK PhOptionsDialogProc(
         {
             PDRAWITEMSTRUCT drawInfo = (PDRAWITEMSTRUCT)lParam;
 
-            if (drawInfo->CtlID == IDC_SEPARATOR)
-            {
-                RECT rect;
-
-                rect = drawInfo->rcItem;
-                rect.right = 2;
-
-                if (PhEnableThemeSupport)
-                {
-                    switch (PhCsGraphColorMode)
-                    {
-                    case 0: // New colors
-                        {
-                            FillRect(drawInfo->hDC, &rect, GetSysColorBrush(COLOR_3DHIGHLIGHT));
-                            rect.left += 1;
-                            FillRect(drawInfo->hDC, &rect, GetSysColorBrush(COLOR_3DSHADOW));
-                        }
-                        break;
-                    case 1: // Old colors
-                        {
-                            SetDCBrushColor(drawInfo->hDC, RGB(0, 0, 0));
-                            FillRect(drawInfo->hDC, &rect, GetStockBrush(DC_BRUSH));
-                        }
-                        break;
-                    }
-                }
-                else
-                {
-                    FillRect(drawInfo->hDC, &rect, GetSysColorBrush(COLOR_3DHIGHLIGHT));
-                    rect.left += 1;
-                    FillRect(drawInfo->hDC, &rect, GetSysColorBrush(COLOR_3DSHADOW));
-                }
-
-                return TRUE;
-            }
+            //if (drawInfo->CtlID == IDC_SEPARATOR)
+            //{
+            //    RECT rect;
+            //
+            //    rect = drawInfo->rcItem;
+            //    rect.right = 2;
+            //
+            //    if (PhEnableThemeSupport)
+            //    {
+            //        switch (PhCsGraphColorMode)
+            //        {
+            //        case 0: // New colors
+            //            {
+            //                FillRect(drawInfo->hDC, &rect, GetSysColorBrush(COLOR_3DHIGHLIGHT));
+            //                rect.left += 1;
+            //                FillRect(drawInfo->hDC, &rect, GetSysColorBrush(COLOR_3DSHADOW));
+            //            }
+            //            break;
+            //        case 1: // Old colors
+            //            {
+            //                SetDCBrushColor(drawInfo->hDC, RGB(0, 0, 0));
+            //                FillRect(drawInfo->hDC, &rect, GetStockBrush(DC_BRUSH));
+            //            }
+            //            break;
+            //        }
+            //    }
+            //    else
+            //    {
+            //        FillRect(drawInfo->hDC, &rect, GetSysColorBrush(COLOR_3DHIGHLIGHT));
+            //        rect.left += 1;
+            //        FillRect(drawInfo->hDC, &rect, GetSysColorBrush(COLOR_3DSHADOW));
+            //    }
+            //
+            //    return TRUE;
+            //}
         }
         break;
     case WM_NOTIFY:
@@ -998,6 +995,213 @@ VOID PhpSetDefaultTaskManager(
     }
 }
 
+BOOLEAN PhpIsExploitProtectionEnabled(
+    VOID
+    )
+{
+    BOOLEAN enabled = FALSE;
+    HANDLE keyHandle;
+    PPH_STRING path;
+    PPH_STRING apppath;
+    PPH_STRING keypath;
+
+    path = PhCreateString2(&TaskMgrImageOptionsKeyName);
+    apppath = PhGetApplicationFileName();
+
+    PhMoveReference(&path, PhGetBaseDirectory(path));
+    PhMoveReference(&apppath, PhGetBaseName(apppath));
+    keypath = PhConcatStrings(3, path->Buffer, L"\\", apppath->Buffer);
+    PhDereferenceObject(apppath);
+    PhDereferenceObject(path);
+
+    if (NT_SUCCESS(PhOpenKey(
+        &keyHandle,
+        KEY_READ,
+        PH_KEY_LOCAL_MACHINE,
+        &keypath->sr,
+        0
+        )))
+    {
+        PH_STRINGREF valueName;
+        PKEY_VALUE_PARTIAL_INFORMATION buffer;
+
+        enabled = !(PhQueryRegistryUlong64(keyHandle, L"MitigationOptions") == ULLONG_MAX);
+        PhInitializeStringRef(&valueName, L"MitigationOptions");
+
+        if (NT_SUCCESS(PhQueryValueKey(keyHandle, &valueName, KeyValuePartialInformation, &buffer)))
+        {
+            if (buffer->Type == REG_BINARY && buffer->DataLength)
+            {
+                enabled = TRUE;
+            }
+
+            PhFree(buffer);
+        }
+
+        NtClose(keyHandle);
+    }
+
+    PhDereferenceObject(keypath);
+
+    return enabled;
+}
+
+NTSTATUS PhpSetExploitProtectionEnabled(
+    _In_ BOOLEAN Enabled)
+{
+    static PH_STRINGREF replacementToken = PH_STRINGREF_INIT(L"Software\\");
+    static PH_STRINGREF wow6432Token = PH_STRINGREF_INIT(L"Software\\WOW6432Node\\");
+    static PH_STRINGREF valueName = PH_STRINGREF_INIT(L"MitigationOptions");
+    NTSTATUS status = STATUS_UNSUCCESSFUL;
+    HANDLE keyHandle;
+    PPH_STRING path;
+    PPH_STRING apppath;
+    PPH_STRING keypath;
+
+    if (Enabled)
+    {
+        path = PhCreateString2(&TaskMgrImageOptionsKeyName);
+        apppath = PhGetApplicationFileName();
+
+        PhMoveReference(&path, PhGetBaseDirectory(path));
+        PhMoveReference(&apppath, PhGetBaseName(apppath));
+        keypath = PhConcatStrings(3, path->Buffer, L"\\", apppath->Buffer);
+        PhDereferenceObject(apppath);
+        PhDereferenceObject(path);
+
+        status = PhCreateKey(
+            &keyHandle,
+            KEY_WRITE,
+            PH_KEY_LOCAL_MACHINE,
+            &keypath->sr,
+            OBJ_OPENIF,
+            0,
+            NULL
+            );
+
+        if (NT_SUCCESS(status))
+        {
+            status = PhSetValueKey(keyHandle, &valueName, REG_QWORD, &(ULONG64)
+            {
+                PROCESS_CREATION_MITIGATION_POLICY_HEAP_TERMINATE_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_BOTTOM_UP_ASLR_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_HIGH_ENTROPY_ASLR_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_EXTENSION_POINT_DISABLE_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_CONTROL_FLOW_GUARD_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_FONT_DISABLE_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_REMOTE_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_LOW_LABEL_ALWAYS_ON |
+                PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON,
+            }, sizeof(ULONG64));
+
+            NtClose(keyHandle);
+        }
+
+#ifdef _WIN64
+        if (NT_SUCCESS(status))
+        {
+            PH_STRINGREF stringBefore;
+            PH_STRINGREF stringAfter;
+
+            if (PhSplitStringRefAtString(&keypath->sr, &replacementToken, TRUE, &stringBefore, &stringAfter))
+            {
+                PhMoveReference(&keypath, PhConcatStringRef3(&stringBefore, &wow6432Token, &stringAfter));
+
+                if (NT_SUCCESS(PhCreateKey(
+                    &keyHandle,
+                    KEY_WRITE,
+                    PH_KEY_LOCAL_MACHINE,
+                    &keypath->sr,
+                    OBJ_OPENIF,
+                    0,
+                    NULL
+                    )))
+                {
+                    status = PhSetValueKey(keyHandle, &valueName, REG_QWORD, &(ULONG64)
+                    {
+                        PROCESS_CREATION_MITIGATION_POLICY_HEAP_TERMINATE_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_BOTTOM_UP_ASLR_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_HIGH_ENTROPY_ASLR_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_EXTENSION_POINT_DISABLE_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_CONTROL_FLOW_GUARD_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_FONT_DISABLE_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_REMOTE_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_LOW_LABEL_ALWAYS_ON |
+                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON,
+                    }, sizeof(ULONG64));
+
+                    NtClose(keyHandle);
+                }
+            }
+        }
+#endif
+        PhDereferenceObject(keypath);
+    }
+    else
+    {
+        path = PhCreateString2(&TaskMgrImageOptionsKeyName);
+        apppath = PhGetApplicationFileName();
+
+        PhMoveReference(&path, PhGetBaseDirectory(path));
+        PhMoveReference(&apppath, PhGetBaseName(apppath));
+        keypath = PhConcatStrings(3, path->Buffer, L"\\", apppath->Buffer);
+        PhDereferenceObject(apppath);
+        PhDereferenceObject(path);
+
+        status = PhOpenKey(
+            &keyHandle,
+            DELETE,
+            PH_KEY_LOCAL_MACHINE,
+            &keypath->sr,
+            OBJ_OPENIF
+            );
+
+        if (NT_SUCCESS(status))
+        {
+            status = NtDeleteKey(keyHandle);
+            NtClose(keyHandle);
+        }
+
+        if (status == STATUS_OBJECT_NAME_NOT_FOUND)
+            status = STATUS_SUCCESS;
+
+#ifdef _WIN64
+        if (NT_SUCCESS(status))
+        {
+            PH_STRINGREF stringBefore;
+            PH_STRINGREF stringAfter;
+
+            if (PhSplitStringRefAtString(&keypath->sr, &replacementToken, TRUE, &stringBefore, &stringAfter))
+            {
+                PhMoveReference(&keypath, PhConcatStringRef3(&stringBefore, &wow6432Token, &stringAfter));
+
+                status = PhOpenKey(
+                    &keyHandle,
+                    DELETE,
+                    PH_KEY_LOCAL_MACHINE,
+                    &keypath->sr,
+                    OBJ_OPENIF
+                    );
+                
+                if (NT_SUCCESS(status))
+                {
+                    status = NtDeleteKey(keyHandle);
+                    NtClose(keyHandle);
+                }
+            }
+        }
+#endif
+        PhDereferenceObject(keypath);
+    }
+
+    if (status == STATUS_OBJECT_NAME_NOT_FOUND)
+        status = STATUS_SUCCESS;
+
+    return status;
+}
+
 VOID PhpRefreshTaskManagerState(
     _In_ HWND WindowHandle
     )
@@ -1026,12 +1230,14 @@ typedef enum _PHP_OPTIONS_INDEX
     PHP_OPTIONS_INDEX_HIDE_WHENMINIMIZED,
     PHP_OPTIONS_INDEX_START_ATLOGON,
     PHP_OPTIONS_INDEX_START_HIDDEN,
-    PHP_OPTIONS_INDEX_ENABLE_MINIINFO_WINDOW,
-    PHP_OPTIONS_INDEX_ENABLE_DRIVER,
     PHP_OPTIONS_INDEX_ENABLE_WARNINGS,
+    PHP_OPTIONS_INDEX_ENABLE_DRIVER,
+    PHP_OPTIONS_INDEX_ENABLE_MITIGATION,
     PHP_OPTIONS_INDEX_ENABLE_PLUGINS,
     PHP_OPTIONS_INDEX_ENABLE_UNDECORATE_SYMBOLS,
     PHP_OPTIONS_INDEX_ENABLE_CYCLE_CPU_USAGE,
+    PHP_OPTIONS_INDEX_ENABLE_MINIINFO_WINDOW,
+    PHP_OPTIONS_INDEX_ENABLE_LASTTAB_SUPPORT,
     PHP_OPTIONS_INDEX_ENABLE_THEME_SUPPORT,
     PHP_OPTIONS_INDEX_ENABLE_START_ASADMIN,
     PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE,
@@ -1064,12 +1270,14 @@ static VOID PhpAdvancedPageLoad(
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_HIDE_WHENMINIMIZED, L"Hide when minimized", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_START_ATLOGON, L"Start when I log on", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_START_HIDDEN, L"Start hidden", NULL);
-    PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_MINIINFO_WINDOW, L"Enable tray information window", NULL);
-    PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_DRIVER, L"Enable kernel-mode driver", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_WARNINGS, L"Enable warnings", NULL);
+    PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_DRIVER, L"Enable kernel-mode driver", NULL);
+    PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_MITIGATION, L"Enable mitigation policy", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_PLUGINS, L"Enable plugins", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_UNDECORATE_SYMBOLS, L"Enable undecorated symbols", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_CYCLE_CPU_USAGE, L"Enable cycle-based CPU usage", NULL);
+    PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_MINIINFO_WINDOW, L"Enable tray information window", NULL);
+    PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_LASTTAB_SUPPORT, L"Remember last selected window", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_THEME_SUPPORT, L"Enable theme support (experimental)", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_START_ASADMIN, L"Enable start as admin (experimental)", NULL);
     //PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_LINUX_SUPPORT, L"Enable Windows subsystem for Linux support", NULL);
@@ -1088,6 +1296,7 @@ static VOID PhpAdvancedPageLoad(
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_HIDE_WHENMINIMIZED, L"HideOnMinimize");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_START_HIDDEN, L"StartHidden");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_MINIINFO_WINDOW, L"MiniInfoWindowEnabled");
+    SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_LASTTAB_SUPPORT, L"MainWindowTabRestoreEnabled");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_DRIVER, L"EnableKph");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_WARNINGS, L"EnableWarnings");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_PLUGINS, L"EnablePlugins");
@@ -1108,6 +1317,8 @@ static VOID PhpAdvancedPageLoad(
 
     if (CurrentUserRunPresent)
         ListView_SetCheckState(listViewHandle, PHP_OPTIONS_INDEX_START_ATLOGON, TRUE);
+    if (PhpIsExploitProtectionEnabled())
+        ListView_SetCheckState(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_MITIGATION, TRUE);
     if (PhGetIntegerSetting(L"EnableAdvancedOptions"))
         PhpOptionsShowHideTreeViewItem(FALSE);
 }
@@ -1184,6 +1395,7 @@ static VOID PhpAdvancedPageSave(
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_HIDE_WHENMINIMIZED, L"HideOnMinimize");
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_START_HIDDEN, L"StartHidden");
     SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_MINIINFO_WINDOW, L"MiniInfoWindowEnabled");
+    SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_LASTTAB_SUPPORT, L"MainWindowTabRestoreEnabled");
     SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_DRIVER, L"EnableKph");
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_WARNINGS, L"EnableWarnings");
     SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_PLUGINS, L"EnablePlugins");
@@ -1280,7 +1492,7 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
 
             comboBoxHandle = GetDlgItem(hwndDlg, IDC_MAXSIZEUNIT);
             listviewHandle = GetDlgItem(hwndDlg, IDC_SETTINGS);
-            GeneralListviewImageList = ImageList_Create(1, PH_SCALE_DPI(22), ILC_COLOR, 1, 1);
+            GeneralListviewImageList = ImageList_Create(1, PH_SCALE_DPI(22), ILC_MASK | ILC_COLOR, 1, 1);
 
             PhInitializeLayoutManager(&LayoutManager, hwndDlg);
             PhAddLayoutItem(&LayoutManager, GetDlgItem(hwndDlg, IDC_SEARCHENGINE), NULL, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
@@ -1479,6 +1691,22 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
                                         }
                                     }
                                     break;
+                                case PHP_OPTIONS_INDEX_ENABLE_MITIGATION:
+                                    {
+                                        if (!PhGetOwnTokenAttributes().Elevated)
+                                        {
+                                            PhShowInformation2(
+                                                PhOptionsWindowHandle,
+                                                L"Unable to disable mitigation policy.",
+                                                L"%s",
+                                                L"You need to disable this option with administrative privileges."
+                                                );
+
+                                            SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
+                                            return TRUE;
+                                        }
+                                    }
+                                    break;
                                 }
                             }
                             break;
@@ -1559,6 +1787,35 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
                                         }
                                     }
                                     break;
+                                case PHP_OPTIONS_INDEX_ENABLE_MITIGATION:
+                                    {
+                                        NTSTATUS status;
+
+                                        if (!PhGetOwnTokenAttributes().Elevated)
+                                        {
+                                            PhShowInformation2(
+                                                PhOptionsWindowHandle,
+                                                L"Unable to enable mitigation policy.",
+                                                L"%s",
+                                                L"You need to enable this option with administrative privileges."
+                                                );
+
+                                            SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
+                                            return TRUE;
+                                        }
+
+                                        status = PhpSetExploitProtectionEnabled(TRUE);
+
+                                        if (!NT_SUCCESS(status))
+                                        {
+                                            PhShowStatus(hwndDlg, L"Unable to change mitigation policy.", status, 0);
+                                        }
+                                        else
+                                        {
+                                            RestartRequired = TRUE;
+                                        }
+                                    }
+                                    break;
                                 }
                             }
                             break;
@@ -1588,6 +1845,8 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
                                     break;
                                 case PHP_OPTIONS_INDEX_ENABLE_START_ASADMIN:
                                     break;
+                                case PHP_OPTIONS_INDEX_ENABLE_MITIGATION:
+                                    break;
                                 }
                             }
                             break;
@@ -1605,6 +1864,22 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
                                         if (!!PhGetIntegerSetting(L"EnableStartAsAdmin"))
                                         {
                                             PhDeleteAdminTask(L"ProcessHackerTaskAdmin");
+                                        }
+                                    }
+                                    break;
+                                case PHP_OPTIONS_INDEX_ENABLE_MITIGATION:
+                                    {
+                                        NTSTATUS status;
+
+                                        status = PhpSetExploitProtectionEnabled(FALSE);
+
+                                        if (!NT_SUCCESS(status))
+                                        {
+                                            PhShowStatus(hwndDlg, L"Unable to change mitigation policy.", status, 0);
+                                        }
+                                        else
+                                        {
+                                            RestartRequired = TRUE;
                                         }
                                     }
                                     break;

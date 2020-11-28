@@ -202,6 +202,7 @@ INT WINAPI wWinMain(
     }
 
 #ifndef DEBUG
+    BOOLEAN PhpIsExploitProtectionEnabled(VOID); // Forwarded from options.c (dmex)
     // Starting with Win10 20H1 processes with uiAccess=true override the ProcessExtensionPointDisablePolicy
     // blocking hook DLL injection and inject the window hook anyway. This override doesn't check if the process has also enabled 
     // the MicrosoftSignedOnly policy causing an infinite loop of APC messages and hook DLL loading/unloading
@@ -218,8 +219,9 @@ INT WINAPI wWinMain(
     // because a third party application called SetWindowsHookEx on the machine. (dmex)
     if (
         WindowsVersion >= WINDOWS_10 &&
-        WindowsVersion != WINDOWS_10_20H1 &&
-        WindowsVersion != WINDOWS_10_20H2
+        PhpIsExploitProtectionEnabled()
+        //WindowsVersion != WINDOWS_10_20H1 &&
+        //WindowsVersion != WINDOWS_10_20H2
         )
     {
         PROCESS_MITIGATION_POLICY_INFORMATION policyInfo;
@@ -883,6 +885,7 @@ BOOLEAN PhInitializeMitigationPolicy(
 {
 #if (PHNT_VERSION >= PHNT_WIN7)
 #ifndef DEBUG
+    BOOLEAN PhpIsExploitProtectionEnabled(VOID); // Forwarded from options.c (dmex)
 #define DEFAULT_MITIGATION_POLICY_FLAGS \
     (PROCESS_CREATION_MITIGATION_POLICY_HEAP_TERMINATE_ALWAYS_ON | \
      PROCESS_CREATION_MITIGATION_POLICY_BOTTOM_UP_ASLR_ALWAYS_ON | \
@@ -911,6 +914,8 @@ BOOLEAN PhInitializeMitigationPolicy(
     SIZE_T attributeListLength;
 
     if (WindowsVersion < WINDOWS_10_RS3)
+        return TRUE;
+    if (!PhpIsExploitProtectionEnabled())
         return TRUE;
 
     PhUnicodeStringToStringRef(&NtCurrentPeb()->ProcessParameters->CommandLine, &commandlineSr);

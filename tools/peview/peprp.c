@@ -352,12 +352,12 @@ VOID PvPeProperties(
             BOOLEAN debugPogoValid = FALSE;
             PVOID debugEntry;
 
-            if (PhGetMappedImageDebugEntryByType(
+            if (NT_SUCCESS(PhGetMappedImageDebugEntryByType(
                 &PvMappedImage,
                 IMAGE_DEBUG_TYPE_POGO,
                 NULL,
                 &debugEntry
-                ))
+                )))
             {
                 debugPogoValid = TRUE;
             }
@@ -722,12 +722,12 @@ VOID PvpSetPeImageTimeStamp(
     RtlSecondsSince1970ToTime(PvMappedImage.NtHeaders->FileHeader.TimeDateStamp, &time);
     PhLargeIntegerToLocalSystemTime(&systemTime, &time);
 
-    if (PhGetMappedImageDebugEntryByType(
+    if (NT_SUCCESS(PhGetMappedImageDebugEntryByType(
         &PvMappedImage,
         IMAGE_DEBUG_TYPE_REPRO,
         &debugEntryLength,
         &debugEntry
-        ))
+        )))
     {
         if (debugEntryLength > 0)
         {
@@ -1011,12 +1011,12 @@ VOID PvpSetPeImageCharacteristics(
     if (characteristicsDll & IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE)
         PhAppendStringBuilder2(&stringBuilder, L"Terminal server aware, ");
 
-    if (PhGetMappedImageDebugEntryByType(
+    if (NT_SUCCESS(PhGetMappedImageDebugEntryByType(
         &PvMappedImage,
         IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS,
         &debugEntryLength,
         &debugEntry
-        ))
+        )))
     {
         ULONG characteristics = ULONG_MAX;
 
@@ -1227,27 +1227,29 @@ VOID PvpSetPeImageDebugPdb(
     _In_ HWND ListViewHandle
     )
 {
-    PIMAGE_DEBUG_DIRECTORY_CODEVIEW debugEntry;
+    PCODEVIEW_INFO_PDB70 codeviewEntry;
     ULONG debugEntryLength;
 
-    if (PhGetMappedImageDebugEntryByType(
+    if (NT_SUCCESS(PhGetMappedImageDebugEntryByType(
         &PvMappedImage,
         IMAGE_DEBUG_TYPE_CODEVIEW,
         &debugEntryLength,
-        &debugEntry
-        ))
+        &codeviewEntry
+        )))
     {
         PPH_STRING string;
 
         //if (debugEntryLength == sizeof(IMAGE_DEBUG_DIRECTORY_CODEVIEW))
+        if (codeviewEntry->Signature == CODEVIEW_SIGNATURE_RSDS)
+        {
+            string = PhFormatGuid(&codeviewEntry->PdbGuid);
+            PhSetListViewSubItem(ListViewHandle, PVP_IMAGE_GENERAL_INDEX_DEBUGPDB, 1, string->Buffer);
+            PhDereferenceObject(string);
 
-        string = PhFormatGuid(&debugEntry->PdbSignature);
-        PhSetListViewSubItem(ListViewHandle, PVP_IMAGE_GENERAL_INDEX_DEBUGPDB, 1, string->Buffer);
-        PhDereferenceObject(string);
-
-        string = PhConvertUtf8ToUtf16(debugEntry->ImageName);
-        PhSetListViewSubItem(ListViewHandle, PVP_IMAGE_GENERAL_INDEX_DEBUGIMAGE, 1, string->Buffer);
-        PhDereferenceObject(string);
+            string = PhConvertUtf8ToUtf16(codeviewEntry->ImageName);
+            PhSetListViewSubItem(ListViewHandle, PVP_IMAGE_GENERAL_INDEX_DEBUGIMAGE, 1, string->Buffer);
+            PhDereferenceObject(string);
+        }
     }
 }
 
@@ -1258,12 +1260,12 @@ VOID PvpSetPeImageDebugVCFeatures(
     PIMAGE_DEBUG_VC_FEATURE_ENTRY debugEntry;
     ULONG debugEntryLength;
 
-    if (PhGetMappedImageDebugEntryByType(
+    if (NT_SUCCESS(PhGetMappedImageDebugEntryByType(
         &PvMappedImage,
         IMAGE_DEBUG_TYPE_VC_FEATURE,
         &debugEntryLength,
         &debugEntry
-        ))
+        )))
     {
         PPH_STRING vcfeatures;
 
@@ -1494,7 +1496,7 @@ INT_PTR CALLBACK PvpPeGeneralDlgProc(
             //PhLoadListViewColumnsFromSetting(L"ImageGeneralPropertiesListViewColumns", context->ListViewHandle);
             //PhLoadListViewSortColumnsFromSetting(L"ImageGeneralPropertiesListViewSort", context->ListViewHandle);
 
-            if (context->ListViewImageList = ImageList_Create(2, 20, ILC_COLOR, 1, 1))
+            if (context->ListViewImageList = ImageList_Create(2, 20, ILC_MASK | ILC_COLOR, 1, 1))
                 ListView_SetImageList(context->ListViewHandle, context->ListViewImageList, LVSIL_SMALL);
 
             PvpSetPeImageVersionInfo(hwndDlg);
