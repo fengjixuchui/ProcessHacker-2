@@ -464,6 +464,35 @@ PPH_STRING PhGetSecurityDescriptorAsString(
     return securityDescriptorString;
 }
 
+PSECURITY_DESCRIPTOR PhGetSecurityDescriptorFromString(
+    _In_ PWSTR SecurityDescriptorString
+    )
+{
+    PVOID securityDescriptor = NULL;
+    ULONG securityDescriptorLength = 0;
+    PSECURITY_DESCRIPTOR securityDescriptorBuffer = NULL;
+
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW_Import())
+        return NULL;
+
+    if (ConvertStringSecurityDescriptorToSecurityDescriptorW_Import()(
+        SecurityDescriptorString,
+        SDDL_REVISION,
+        &securityDescriptorBuffer,
+        &securityDescriptorLength
+        ))
+    {
+        //assert(securityDescriptorLength == RtlLengthSecurityDescriptor(securityDescriptor));
+        securityDescriptor = PhAllocateCopy(
+            securityDescriptorBuffer,
+            securityDescriptorLength
+            );
+        LocalFree(securityDescriptorBuffer);
+    }
+
+    return securityDescriptor;
+}
+
 _Success_(return)
 BOOLEAN PhGetObjectSecurityDescriptorAsString(
     _In_ HANDLE Handle,
@@ -902,7 +931,7 @@ NTSTATUS PhGetProcessPebString(
  * \param ProcessHandle A handle to a process. The handle must have
  * PROCESS_QUERY_LIMITED_INFORMATION. Before Windows 8.1, the handle must also have PROCESS_VM_READ
  * access.
- * \param String A variable which receives a pointer to a string containing the command line. You
+ * \param CommandLine A variable which receives a pointer to a string containing the command line. You
  * must free the string using PhDereferenceObject() when you no longer need it.
  */
 NTSTATUS PhGetProcessCommandLine(
@@ -2138,7 +2167,8 @@ NTSTATUS PhSetEnvironmentVariableRemote(
     }
 #endif
 
-    status = NtAlertResumeThread(threadHandle, NULL);
+    // Execute the pending APCs (dmex)
+    status = NtResumeThread(threadHandle, NULL);
 
     if (!NT_SUCCESS(status))
         goto CleanupExit;
@@ -3096,6 +3126,50 @@ NTSTATUS PhSetFilePosition(
         );
 }
 
+NTSTATUS PhGetFileAllocationSize(
+    _In_ HANDLE FileHandle,
+    _Out_ PLARGE_INTEGER AllocationSize
+    )
+{
+    NTSTATUS status;
+    FILE_ALLOCATION_INFORMATION allocationInfo;
+    IO_STATUS_BLOCK isb;
+
+    status = NtQueryInformationFile(
+        FileHandle,
+        &isb,
+        &allocationInfo,
+        sizeof(FILE_ALLOCATION_INFORMATION),
+        FileAllocationInformation
+        );
+
+    if (!NT_SUCCESS(status))
+        return status;
+
+    *AllocationSize = allocationInfo.AllocationSize;
+
+    return status;
+}
+
+NTSTATUS PhSetFileAllocationSize(
+    _In_ HANDLE FileHandle,
+    _In_ PLARGE_INTEGER AllocationSize
+    )
+{
+    FILE_ALLOCATION_INFORMATION allocationInfo;
+    IO_STATUS_BLOCK isb;
+
+    allocationInfo.AllocationSize = *AllocationSize;
+
+    return NtSetInformationFile(
+        FileHandle,
+        &isb,
+        &allocationInfo,
+        sizeof(FILE_ALLOCATION_INFORMATION),
+        FileAllocationInformation
+        );
+}
+
 NTSTATUS PhDeleteFile(
     _In_ HANDLE FileHandle
     )
@@ -4041,8 +4115,8 @@ BOOLEAN NTAPI PhpEnumProcessModulesCallback(
     )
 {
     PPH_ENUM_PROCESS_MODULES_PARAMETERS parameters = Context1;
-    NTSTATUS status = STATUS_FAIL_CHECK;
-    BOOLEAN cont = FALSE;
+    NTSTATUS status;
+    BOOLEAN cont;
     PPH_STRING mappedFileName = NULL;
     PWSTR fullDllNameOriginal;
     PWSTR fullDllNameBuffer = NULL;
@@ -4064,7 +4138,7 @@ BOOLEAN NTAPI PhpEnumProcessModulesCallback(
         PhStringRefToUnicodeString(&mappedFileName->sr, &Entry->FullDllName);
         indexOfLastBackslash = PhFindLastCharInString(mappedFileName, 0, OBJ_NAME_PATH_SEPARATOR);
 
-        if (indexOfLastBackslash != -1)
+        if (indexOfLastBackslash != SIZE_MAX)
         {
             Entry->BaseDllName.Buffer = PTR_ADD_OFFSET(Entry->FullDllName.Buffer, PTR_ADD_OFFSET(indexOfLastBackslash * sizeof(WCHAR), sizeof(UNICODE_NULL)));
             Entry->BaseDllName.Length = Entry->FullDllName.Length - (USHORT)indexOfLastBackslash * sizeof(WCHAR) - sizeof(UNICODE_NULL);
@@ -4446,7 +4520,7 @@ BOOLEAN NTAPI PhpEnumProcessModules32Callback(
         PhStringRefToUnicodeString(&mappedFileName->sr, &nativeEntry.FullDllName);
         indexOfLastBackslash = PhFindLastCharInString(mappedFileName, 0, OBJ_NAME_PATH_SEPARATOR);
 
-        if (indexOfLastBackslash != -1)
+        if (indexOfLastBackslash != SIZE_MAX)
         {
             nativeEntry.BaseDllName.Buffer = PTR_ADD_OFFSET(nativeEntry.FullDllName.Buffer, PTR_ADD_OFFSET(indexOfLastBackslash * sizeof(WCHAR), sizeof(WCHAR)));
             nativeEntry.BaseDllName.Length = nativeEntry.FullDllName.Length - (USHORT)indexOfLastBackslash * sizeof(WCHAR) - sizeof(WCHAR);
@@ -7893,6 +7967,7 @@ NTSTATUS PhCreateFileWin32(
         FileHandle,
         FileName,
         DesiredAccess,
+        NULL,
         FileAttributes,
         ShareAccess,
         CreateDisposition,
@@ -7907,6 +7982,7 @@ NTSTATUS PhCreateFileWin32(
  * \param FileHandle A variable that receives the file handle.
  * \param FileName The Win32 file name.
  * \param DesiredAccess The desired access to the file.
+ * \param AllocationSize The initial allocation size if the file is being created, overwritten, or superseded.
  * \param FileAttributes File attributes applied if the file is created or overwritten.
  * \param ShareAccess The file access granted to other threads.
  * \li \c FILE_SHARE_READ Allows other threads to read from the file.
@@ -7938,6 +8014,7 @@ NTSTATUS PhCreateFileWin32Ex(
     _Out_ PHANDLE FileHandle,
     _In_ PWSTR FileName,
     _In_ ACCESS_MASK DesiredAccess,
+    _In_opt_ PLARGE_INTEGER AllocationSize,
     _In_opt_ ULONG FileAttributes,
     _In_ ULONG ShareAccess,
     _In_ ULONG CreateDisposition,
@@ -7980,7 +8057,7 @@ NTSTATUS PhCreateFileWin32Ex(
         DesiredAccess,
         &objectAttributes,
         &isb,
-        NULL,
+        AllocationSize,
         FileAttributes,
         ShareAccess,
         CreateDisposition,
@@ -8429,7 +8506,7 @@ static BOOLEAN PhpDeleteDirectoryCallback(
         if (NT_SUCCESS(PhCreateFileWin32(
             &directoryHandle,
             PhGetString(fullName),
-            FILE_GENERIC_READ | DELETE,
+            FILE_LIST_DIRECTORY | FILE_WRITE_ATTRIBUTES | DELETE | SYNCHRONIZE,
             FILE_ATTRIBUTE_DIRECTORY,
             FILE_SHARE_READ | FILE_SHARE_DELETE,
             FILE_OPEN,
@@ -8438,7 +8515,6 @@ static BOOLEAN PhpDeleteDirectoryCallback(
         {
             PhEnumDirectoryFile(directoryHandle, NULL, PhpDeleteDirectoryCallback, fullName);
 
-            // Delete the directory. 
             PhDeleteFile(directoryHandle);
 
             NtClose(directoryHandle);
@@ -8453,35 +8529,41 @@ static BOOLEAN PhpDeleteDirectoryCallback(
             if (NT_SUCCESS(PhCreateFileWin32(
                 &fileHandle,
                 PhGetString(fullName),
-                FILE_GENERIC_READ | FILE_WRITE_ATTRIBUTES,
+                FILE_WRITE_ATTRIBUTES | DELETE | SYNCHRONIZE,
                 FILE_ATTRIBUTE_NORMAL,
                 FILE_SHARE_WRITE,
                 FILE_OPEN,
                 FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
                 )))
             {
-                IO_STATUS_BLOCK isb;
-                FILE_BASIC_INFORMATION fileInfo;
+                if (WindowsVersion < WINDOWS_10_RS5) // We can ignore readonly attributes starting with RS5 (dmex)
+                {
+                    IO_STATUS_BLOCK isb;
+                    FILE_BASIC_INFORMATION fileInfo;
 
-                memset(&fileInfo, 0, sizeof(FILE_BASIC_INFORMATION));
+                    memset(&fileInfo, 0, sizeof(FILE_BASIC_INFORMATION));
 
-                // Clear the read-only flag.
-                fileInfo.FileAttributes = Information->FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
+                    // Clear the read-only flag.
+                    fileInfo.FileAttributes = Information->FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
 
-                NtSetInformationFile(
-                    fileHandle,
-                    &isb,
-                    &fileInfo,
-                    sizeof(FILE_BASIC_INFORMATION),
-                    FileBasicInformation
-                    );
+                    NtSetInformationFile(
+                        fileHandle,
+                        &isb,
+                        &fileInfo,
+                        sizeof(FILE_BASIC_INFORMATION),
+                        FileBasicInformation
+                        );
+                }
+
+                PhDeleteFile(fileHandle);
 
                 NtClose(fileHandle);
             }
         }
-
-        // Delete the file. 
-        PhDeleteFileWin32(PhGetString(fullName));
+        else
+        {
+            PhDeleteFileWin32(PhGetString(fullName));
+        }
     }
 
     PhDereferenceObject(fullName);
@@ -8503,7 +8585,7 @@ NTSTATUS PhDeleteDirectory(
     status = PhCreateFileWin32(
         &directoryHandle,
         PhGetString(DirectoryPath),
-        FILE_GENERIC_READ | DELETE,
+        FILE_LIST_DIRECTORY | DELETE | SYNCHRONIZE,
         FILE_ATTRIBUTE_DIRECTORY,
         FILE_SHARE_READ | FILE_SHARE_DELETE,
         FILE_OPEN,
@@ -8512,7 +8594,7 @@ NTSTATUS PhDeleteDirectory(
 
     if (NT_SUCCESS(status))
     {
-        // Remove any files or folders inside the directory.
+        // Remove any files or folders inside the directory. (dmex)
         status = PhEnumDirectoryFile(
             directoryHandle, 
             NULL, 
@@ -8520,8 +8602,11 @@ NTSTATUS PhDeleteDirectory(
             DirectoryPath
             );
 
-        // Remove the directory. 
-        PhDeleteFile(directoryHandle);
+        if (NT_SUCCESS(status))
+        {
+            // Remove the directory. (dmex)
+            status = PhDeleteFile(directoryHandle);
+        }
 
         NtClose(directoryHandle);
     }
@@ -8595,72 +8680,83 @@ NTSTATUS PhMoveFileWin32(
     if (status == STATUS_NOT_SAME_DEVICE)
     {
         HANDLE newFileHandle;
+        LARGE_INTEGER newFileSize;
         BYTE buffer[PAGE_SIZE];
 
-        status = PhCreateFileWin32(
+        status = PhGetFileSize(fileHandle, &newFileSize);
+
+        if (!NT_SUCCESS(status))
+            goto CleanupExit;
+
+        status = PhCreateFileWin32Ex(
             &newFileHandle,
             NewFileName,
             FILE_GENERIC_WRITE,
+            &newFileSize,
             FILE_ATTRIBUTE_NORMAL,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_SHARE_READ,
             FILE_OVERWRITE_IF,
-            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
+            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+            NULL
             );
 
-        if (!NT_SUCCESS(status))
+        if (NT_SUCCESS(status))
         {
-            NtClose(fileHandle);
-            RtlFreeUnicodeString(&newFileName);
-            PhFree(renameInfo);
-            return status;
+            while (TRUE)
+            {
+                status = NtReadFile(
+                    fileHandle,
+                    NULL,
+                    NULL,
+                    NULL,
+                    &isb,
+                    buffer,
+                    sizeof(buffer),
+                    NULL,
+                    NULL
+                    );
+
+                if (!NT_SUCCESS(status))
+                    break;
+                if (isb.Information == 0)
+                    break;
+
+                status = NtWriteFile(
+                    newFileHandle,
+                    NULL,
+                    NULL,
+                    NULL,
+                    &isb,
+                    buffer,
+                    (ULONG)isb.Information,
+                    NULL,
+                    NULL
+                    );
+
+                if (!NT_SUCCESS(status))
+                    break;
+                if (isb.Information == 0)
+                    break;
+            }
+
+            if (status == STATUS_END_OF_FILE)
+            {
+                status = STATUS_SUCCESS;
+            }
+
+            if (status != STATUS_SUCCESS)
+            {
+                PhDeleteFile(newFileHandle);
+            }
+
+            NtClose(newFileHandle);
         }
-
-        while (TRUE)
-        {
-            status = NtReadFile(
-                fileHandle,
-                NULL,
-                NULL,
-                NULL,
-                &isb,
-                buffer,
-                sizeof(buffer),
-                NULL,
-                NULL
-                );
-
-            if (!NT_SUCCESS(status))
-                break;
-            if (isb.Information == 0)
-                break;
-
-            status = NtWriteFile(
-                newFileHandle,
-                NULL,
-                NULL,
-                NULL,
-                &isb,
-                buffer,
-                (ULONG)isb.Information,
-                NULL,
-                NULL
-                );
-
-            if (!NT_SUCCESS(status))
-                break;
-            if (isb.Information == 0)
-                break;
-        }
-
-        NtClose(newFileHandle);
     }
 
+CleanupExit:
     NtClose(fileHandle);
     RtlFreeUnicodeString(&newFileName);
     PhFree(renameInfo);
-
-    if (status == STATUS_END_OF_FILE)
-        status = STATUS_SUCCESS;
 
     return status;
 }
@@ -8751,7 +8847,7 @@ NTSTATUS PhCreatePipeEx(
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         FILE_CREATE,
         FILE_PIPE_INBOUND | FILE_SYNCHRONOUS_IO_NONALERT,
-        FILE_PIPE_BYTE_STREAM_TYPE,
+        FILE_PIPE_BYTE_STREAM_TYPE | FILE_PIPE_REJECT_REMOTE_CLIENTS,
         FILE_PIPE_BYTE_STREAM_MODE,
         FILE_PIPE_QUEUE_OPERATION,
         1,
@@ -8849,7 +8945,7 @@ NTSTATUS PhCreateNamedPipe(
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         FILE_OPEN_IF,
         FILE_PIPE_FULL_DUPLEX | FILE_SYNCHRONOUS_IO_NONALERT,
-        FILE_PIPE_MESSAGE_TYPE,
+        FILE_PIPE_MESSAGE_TYPE | FILE_PIPE_REJECT_REMOTE_CLIENTS,
         FILE_PIPE_MESSAGE_MODE,
         FILE_PIPE_QUEUE_OPERATION,
         FILE_PIPE_UNLIMITED_INSTANCES,
@@ -9053,7 +9149,7 @@ NTSTATUS PhCallNamedPipe(
     _In_ ULONG OutputBufferLength
     )
 {
-    NTSTATUS status = STATUS_UNSUCCESSFUL;
+    NTSTATUS status;
     HANDLE pipeHandle = NULL;
 
     status = PhConnectPipe(&pipeHandle, PipeName);

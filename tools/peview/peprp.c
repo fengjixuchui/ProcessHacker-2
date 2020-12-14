@@ -23,11 +23,8 @@
 
 #include <peview.h>
 #include <workqueue.h>
-#include <cpysave.h>
 #include <verify.h>
 #include <shellapi.h>
-
-#include <secedit.h>
 
 #define PVM_CHECKSUM_DONE (WM_APP + 1)
 #define PVM_VERIFY_DONE (WM_APP + 2)
@@ -733,7 +730,18 @@ VOID PvpSetPeImageTimeStamp(
         {
             PPH_STRING timeStamp;
 
-            string = PhBufferToHexStringEx(debugEntry->Buffer, debugEntry->Length, FALSE);
+            __try
+            {
+                if (debugEntry->Length == debugEntryLength - sizeof(ULONG))
+                    string = PhBufferToHexStringEx(debugEntry->Buffer, debugEntry->Length, FALSE);
+                else
+                    string = PhBufferToHexStringEx(debugEntry->Buffer, debugEntryLength - sizeof(ULONG), FALSE);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                string = PhGetStatusMessage(GetExceptionCode(), 0);
+            }
+
             timeStamp = PhBufferToHexStringEx((PBYTE)&PvMappedImage.NtHeaders->FileHeader.TimeDateStamp, sizeof(ULONG), FALSE);
 
             if (PhEndsWithString(string, timeStamp, TRUE))
@@ -1078,7 +1086,7 @@ VOID PvpSetPeImageFileProperties(
         FILE_ATTRIBUTE_NORMAL,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         FILE_OPEN,
-        0
+        FILE_SYNCHRONOUS_IO_NONALERT
         )))
     {
         if (NT_SUCCESS(NtQueryInformationFile(
@@ -1357,11 +1365,11 @@ NTSTATUS PhpOpenFileSecurity(
         status = PhCreateFileWin32(
             Handle,
             PhGetString(PvFileName),
-            DesiredAccess| READ_CONTROL | WRITE_DAC,
+            DesiredAccess | READ_CONTROL | WRITE_DAC | SYNCHRONIZE,
             FILE_ATTRIBUTE_DIRECTORY,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             FILE_OPEN,
-            0
+            FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
             );
     }
     else
@@ -1369,11 +1377,11 @@ NTSTATUS PhpOpenFileSecurity(
         status = PhCreateFileWin32(
             Handle,
             PhGetString(PvFileName),
-            DesiredAccess | READ_CONTROL | WRITE_DAC,
+            DesiredAccess | READ_CONTROL | WRITE_DAC | SYNCHRONIZE,
             FILE_ATTRIBUTE_NORMAL,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             FILE_OPEN,
-            0
+            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
             );
 
         if (!NT_SUCCESS(status))
@@ -1381,11 +1389,11 @@ NTSTATUS PhpOpenFileSecurity(
             status = PhCreateFileWin32(
                 Handle,
                 PhGetString(PvFileName),
-                DesiredAccess | READ_CONTROL,
+                DesiredAccess | READ_CONTROL | SYNCHRONIZE,
                 FILE_ATTRIBUTE_NORMAL,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 FILE_OPEN,
-                0
+                FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
                 );
         }
     }
