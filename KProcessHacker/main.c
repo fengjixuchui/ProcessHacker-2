@@ -27,6 +27,9 @@ DRIVER_UNLOAD DriverUnload;
 _Dispatch_type_(IRP_MJ_CREATE) DRIVER_DISPATCH KphDispatchCreate;
 _Dispatch_type_(IRP_MJ_CLOSE) DRIVER_DISPATCH KphDispatchClose;
 
+KPH_EXTENTS NtdllExtents;
+UNICODE_STRING NtdllKnownDllName = RTL_CONSTANT_STRING(L"\\KnownDlls\\ntdll.dll");
+
 ULONG KphpReadIntegerParameter(
     _In_opt_ HANDLE KeyHandle,
     _In_ PUNICODE_STRING ValueName,
@@ -37,18 +40,26 @@ NTSTATUS KphpReadDriverParameters(
     _In_ PUNICODE_STRING RegistryPath
     );
 
+NTSTATUS KpiPopulateKnownDllExtents(
+    _In_ PUNICODE_STRING SectionName,
+    _Out_ PKPH_EXTENTS ModuleExtents
+    );
+
+NTSTATUS KpiKnownDllInit();
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, DriverEntry)
 #pragma alloc_text(PAGE, DriverUnload)
 #pragma alloc_text(PAGE, KphpReadIntegerParameter)
 #pragma alloc_text(PAGE, KphpReadDriverParameters)
 #pragma alloc_text(PAGE, KpiGetFeatures)
+#pragma alloc_text(PAGE, KpiPopulateKnownDllExtents)
+#pragma alloc_text(PAGE, KpiKnownDllInit)
 #endif
 
 PDRIVER_OBJECT KphDriverObject;
 PDEVICE_OBJECT KphDeviceObject;
 ULONG KphFeatures;
-KPH_PARAMETERS KphParameters;
 
 NTSTATUS DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
@@ -71,6 +82,9 @@ NTSTATUS DriverEntry(
     KphDynamicImport();
 
     if (!NT_SUCCESS(status = KphpReadDriverParameters(RegistryPath)))
+        return status;
+
+    if (!NT_SUCCESS(status = KpiKnownDllInit()))
         return status;
 
     // Create the device.
@@ -127,6 +141,8 @@ NTSTATUS KphDispatchCreate(
     PFILE_OBJECT fileObject;
     PIO_SECURITY_CONTEXT securityContext;
     PKPH_CLIENT client;
+    UCHAR requiredPrivilegesBuffer[FIELD_OFFSET(PRIVILEGE_SET, Privilege) + sizeof(LUID_AND_ATTRIBUTES)];
+    PPRIVILEGE_SET requiredPrivileges;
 
     stackLocation = IoGetCurrentIrpStackLocation(Irp);
     fileObject = stackLocation->FileObject;
@@ -134,30 +150,23 @@ NTSTATUS KphDispatchCreate(
 
     dprintf("Client (PID %lu) is connecting\n", HandleToUlong(PsGetCurrentProcessId()));
 
-    if (KphParameters.SecurityLevel == KphSecurityPrivilegeCheck ||
-        KphParameters.SecurityLevel == KphSecuritySignatureAndPrivilegeCheck)
+    // Check for SeDebugPrivilege.
+
+    requiredPrivileges = (PPRIVILEGE_SET)requiredPrivilegesBuffer;
+    requiredPrivileges->PrivilegeCount = 1;
+    requiredPrivileges->Control = PRIVILEGE_SET_ALL_NECESSARY;
+    requiredPrivileges->Privilege[0].Luid.LowPart = SE_DEBUG_PRIVILEGE;
+    requiredPrivileges->Privilege[0].Luid.HighPart = 0;
+    requiredPrivileges->Privilege[0].Attributes = 0;
+
+    if (!SePrivilegeCheck(
+        requiredPrivileges,
+        &securityContext->AccessState->SubjectSecurityContext,
+        Irp->RequestorMode
+        ))
     {
-        UCHAR requiredPrivilegesBuffer[FIELD_OFFSET(PRIVILEGE_SET, Privilege) + sizeof(LUID_AND_ATTRIBUTES)];
-        PPRIVILEGE_SET requiredPrivileges;
-
-        // Check for SeDebugPrivilege.
-
-        requiredPrivileges = (PPRIVILEGE_SET)requiredPrivilegesBuffer;
-        requiredPrivileges->PrivilegeCount = 1;
-        requiredPrivileges->Control = PRIVILEGE_SET_ALL_NECESSARY;
-        requiredPrivileges->Privilege[0].Luid.LowPart = SE_DEBUG_PRIVILEGE;
-        requiredPrivileges->Privilege[0].Luid.HighPart = 0;
-        requiredPrivileges->Privilege[0].Attributes = 0;
-
-        if (!SePrivilegeCheck(
-            requiredPrivileges,
-            &securityContext->AccessState->SubjectSecurityContext,
-            Irp->RequestorMode
-            ))
-        {
-            status = STATUS_PRIVILEGE_NOT_HELD;
-            dprintf("Client (PID %lu) was rejected\n", HandleToUlong(PsGetCurrentProcessId()));
-        }
+        status = STATUS_PRIVILEGE_NOT_HELD;
+        dprintf("Client (PID %lu) was rejected\n", HandleToUlong(PsGetCurrentProcessId()));
     }
 
     if (NT_SUCCESS(status))
@@ -317,9 +326,6 @@ NTSTATUS KphpReadDriverParameters(
 
     // Read in the parameters.
 
-    RtlInitUnicodeString(&valueName, L"SecurityLevel");
-    KphParameters.SecurityLevel = KphpReadIntegerParameter(parametersKeyHandle, &valueName, KphSecurityPrivilegeCheck);
-
     KphReadDynamicDataParameters(parametersKeyHandle);
 
     if (parametersKeyHandle)
@@ -353,4 +359,89 @@ NTSTATUS KpiGetFeatures(
     }
 
     return STATUS_SUCCESS;
+}
+
+/**
+ * Populates known DLL module extents.
+ *
+ * \param[in] SectionName - Name of the section to open.
+ * \param[out] ModuleExtents - On success, populated with the module extents.
+ *
+ * \return Appropriate status.
+*/
+NTSTATUS KpiPopulateKnownDllExtents(
+    _In_ PUNICODE_STRING SectionName,
+    _Out_ PKPH_EXTENTS ModuleExtents
+    )
+{
+    NTSTATUS status;
+    OBJECT_ATTRIBUTES objectAttributes;
+    HANDLE sectionHandle;
+    SECTION_IMAGE_INFORMATION sectionImageInfo;
+    MEMORY_REGION_INFORMATION memoryRegionInfo;
+
+    NT_ASSERT(PsInitialSystemProcess == PsGetCurrentProcess());
+
+    RtlZeroMemory(ModuleExtents, sizeof(*ModuleExtents));
+
+    sectionHandle = NULL;
+
+    InitializeObjectAttributes(&objectAttributes,
+                               SectionName,
+                               OBJ_KERNEL_HANDLE,
+                               NULL,
+                               NULL);
+
+    status = ZwOpenSection(&sectionHandle,
+                           SECTION_QUERY,
+                           &objectAttributes);
+    if (!NT_SUCCESS(status))
+    {
+        sectionHandle = NULL;
+        goto Exit;
+    }
+
+    status = ZwQuerySection(sectionHandle,
+                            SectionImageInformation,
+                            &sectionImageInfo,
+                            sizeof(sectionImageInfo),
+                            NULL);
+    if (!NT_SUCCESS(status))
+    {
+        goto Exit;
+    }
+
+    status = ZwQueryVirtualMemory(ZwCurrentProcess(),
+                                  sectionImageInfo.TransferAddress,
+                                  MemoryRegionInformation,
+                                  &memoryRegionInfo,
+                                  sizeof(memoryRegionInfo),
+                                  NULL);
+    if (!NT_SUCCESS(status))
+    {
+        goto Exit;
+    }
+
+    ModuleExtents->BaseAddress = sectionImageInfo.TransferAddress;
+    ModuleExtents->EndAddress = PTR_ADD_OFFSET(ModuleExtents->BaseAddress,
+                                               memoryRegionInfo.RegionSize);
+
+Exit:
+
+    if (sectionHandle)
+    {
+        ObCloseHandle(sectionHandle, KernelMode);
+    }
+
+    return status;
+}
+
+/**
+ * Initializes known module extents.
+ *
+ * \return Appropriate status.
+*/
+NTSTATUS KpiKnownDllInit()
+{
+    return KpiPopulateKnownDllExtents(&NtdllKnownDllName, &NtdllExtents);
 }

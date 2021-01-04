@@ -68,6 +68,17 @@ ZwQuerySystemInformation(
     _Out_opt_ PULONG ReturnLength
     );
 
+NTSYSCALLAPI
+NTSTATUS
+NTAPI
+ZwQuerySection(
+    _In_ HANDLE SectionHandle,
+    _In_ SECTION_INFORMATION_CLASS SectionInformationClass,
+    _Out_writes_bytes_(SectionInformationLength) PVOID SectionInformation,
+    _In_ SIZE_T SectionInformationLength,
+    _Out_opt_ PSIZE_T ReturnLength
+    );
+
 // IO
 
 extern POBJECT_TYPE *IoDriverObjectType;
@@ -324,6 +335,57 @@ PsReleaseProcessExitSynchronization(
     _In_ PEPROCESS Process
     );
 
+NTKERNELAPI
+PVOID
+NTAPI
+PsGetProcessSectionBaseAddress(
+    _In_ PEPROCESS Process
+    );
+
+typedef struct _PS_PROTECTION
+{
+    union
+    {
+        UCHAR Level;
+        struct
+        {
+            UCHAR Type   : 3;
+            UCHAR Audit  : 1;                  // Reserved
+            UCHAR Signer : 4;
+        };
+    };
+
+} PS_PROTECTION, *PPS_PROTECTION;
+
+typedef enum _PS_PROTECTED_TYPE
+{
+    PsProtectedTypeNone = 0,
+    PsProtectedTypeProtectedLight = 1,
+    PsProtectedTypeProtected = 2
+
+} PS_PROTECTED_TYPE, *PPS_PROTECTED_TYPE;
+
+typedef enum _PS_PROTECTED_SIGNER
+{
+    PsProtectedSignerNone = 0,
+    PsProtectedSignerAuthenticode,
+    PsProtectedSignerCodeGen,
+    PsProtectedSignerAntimalware,
+    PsProtectedSignerLsa,
+    PsProtectedSignerWindows,
+    PsProtectedSignerWinTcb,
+    PsProtectedSignerWinSystem,
+    PsProtectedSignerApp,
+    PsProtectedSignerMax
+
+} PS_PROTECTED_SIGNER, *PPS_PROTECTED_SIGNER;
+
+typedef
+PS_PROTECTION
+(NTAPI *PPS_GET_PROCESS_PROTECTION)(
+    _In_ PEPROCESS Process
+    );
+
 // RTL
 
 // Sensible limit that may or may not correspond to the actual Windows value.
@@ -331,5 +393,21 @@ PsReleaseProcessExitSynchronization(
 
 #define RTL_WALK_USER_MODE_STACK 0x00000001
 #define RTL_WALK_VALID_FLAGS 0x00000001
+
+NTKERNELAPI
+PIMAGE_NT_HEADERS
+NTAPI
+RtlImageNtHeader(
+    _In_ PVOID Base
+    );
+
+typedef
+NTSTATUS
+(NTAPI *PRTL_IMAGE_NT_HEADER_EX)(
+    _In_ ULONG Flags,
+    _In_ PVOID Base,
+    _In_ ULONG64 Size,
+    _Out_ PIMAGE_NT_HEADERS* OutHeaders
+    );
 
 #endif

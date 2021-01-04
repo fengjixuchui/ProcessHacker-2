@@ -65,10 +65,8 @@ NTSTATUS KphDispatchDeviceControl(
         goto ControlEnd;
     }
 
-    // Enforce signature requirement if necessary.
+    // Enforce signature requirement
     if ((ioControlCode != KPH_GETFEATURES && ioControlCode != KPH_VERIFYCLIENT) &&
-        (KphParameters.SecurityLevel == KphSecuritySignatureCheck ||
-            KphParameters.SecurityLevel == KphSecuritySignatureAndPrivilegeCheck) &&
         !client->VerificationSucceeded)
     {
         status = STATUS_ACCESS_DENIED;
@@ -237,6 +235,8 @@ NTSTATUS KphDispatchDeviceControl(
                 input->ProcessHandle,
                 input->DesiredAccess,
                 input->JobHandle,
+                0, // TODO: interface needs updated to pass key
+                client,
                 accessMode
                 );
         }
@@ -368,6 +368,8 @@ NTSTATUS KphDispatchDeviceControl(
                 input->ThreadHandle,
                 input->DesiredAccess,
                 input->ProcessHandle,
+                0, // TODO: interface needs updated to pass key
+                client,
                 accessMode
                 );
         }
@@ -393,7 +395,8 @@ NTSTATUS KphDispatchDeviceControl(
                 input->BackTrace,
                 input->CapturedFrames,
                 input->BackTraceHash,
-                accessMode
+                accessMode,
+                0
                 );
         }
         break;
