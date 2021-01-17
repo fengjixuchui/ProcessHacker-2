@@ -226,7 +226,7 @@ VOID PhInitializeProcessTreeList(
     PhAddTreeNewColumnEx(hwnd, PHPRTLC_PIDHEX, FALSE, L"PID (Hex)", 50, PH_ALIGN_RIGHT, ULONG_MAX, DT_RIGHT, TRUE);
     PhAddTreeNewColumnEx(hwnd, PHPRTLC_CPUCORECYCLES, FALSE, L"CPU (relative)", 45, PH_ALIGN_RIGHT, ULONG_MAX, DT_RIGHT, TRUE);
     PhAddTreeNewColumnEx(hwnd, PHPRTLC_CET, FALSE, L"CET", 45, PH_ALIGN_LEFT, ULONG_MAX, 0, TRUE);
-    PhAddTreeNewColumnEx(hwnd, PHPRTLC_IMAGE_COHERENCY, FALSE, L"Image Coherency", 70, PH_ALIGN_RIGHT, ULONG_MAX, DT_RIGHT, TRUE);
+    PhAddTreeNewColumnEx(hwnd, PHPRTLC_IMAGE_COHERENCY, FALSE, L"Image coherency", 70, PH_ALIGN_RIGHT, ULONG_MAX, DT_RIGHT, TRUE);
 
     TreeNew_SetRedraw(hwnd, TRUE);
 
@@ -822,17 +822,14 @@ static VOID PhpUpdateProcessNodeWsCounters(
     if (!(ProcessNode->ValidMask & PHPN_WSCOUNTERS))
     {
         BOOLEAN success = FALSE;
-        HANDLE processHandle;
 
-        if (PH_IS_REAL_PROCESS_ID(ProcessNode->ProcessItem->ProcessId))
+        if (
+            PH_IS_REAL_PROCESS_ID(ProcessNode->ProcessItem->ProcessId) &&
+            ProcessNode->ProcessItem->IsHandleValid // PROCESS_QUERY_INFORMATION
+            )
         {
-            if (NT_SUCCESS(PhOpenProcess(&processHandle, PROCESS_QUERY_INFORMATION, ProcessNode->ProcessItem->ProcessId)))
-            {
-                if (NT_SUCCESS(PhGetProcessWsCounters(processHandle, &ProcessNode->WsCounters)))
-                    success = TRUE;
-
-                NtClose(processHandle);
-            }
+            if (NT_SUCCESS(PhGetProcessWsCounters(ProcessNode->ProcessItem->QueryHandle, &ProcessNode->WsCounters)))
+                success = TRUE;
         }
 
         if (!success)
@@ -923,26 +920,19 @@ static VOID PhpUpdateProcessNodeDepStatus(
 {
     if (!(ProcessNode->ValidMask & PHPN_DEPSTATUS))
     {
-        HANDLE processHandle;
-        ULONG depStatus;
-
-        depStatus = 0;
+        ULONG depStatus = 0;
 
 #ifdef _WIN64
-        if (ProcessNode->ProcessItem->IsWow64)
+        if (
+            PH_IS_REAL_PROCESS_ID(ProcessNode->ProcessItem->ProcessId) &&
+            ProcessNode->ProcessItem->IsWow64 &&
+            ProcessNode->ProcessItem->IsHandleValid // PROCESS_QUERY_INFORMATION 
+            )
 #else
-        if (TRUE)
+        if (PH_IS_REAL_PROCESS_ID(ProcessNode->ProcessItem->ProcessId) && ProcessNode->ProcessItem->QueryHandle)
 #endif
         {
-            if (NT_SUCCESS(PhOpenProcess(
-                &processHandle,
-                PROCESS_QUERY_INFORMATION,
-                ProcessNode->ProcessItem->ProcessId
-                )))
-            {
-                PhGetProcessDepStatus(processHandle, &depStatus);
-                NtClose(processHandle);
-            }
+            PhGetProcessDepStatus(ProcessNode->ProcessItem->QueryHandle, &depStatus);
         }
         else
         {
@@ -1004,25 +994,28 @@ static VOID PhpUpdateProcessOsContext(
         {
             NOTHING;
         }
-        else if (NT_SUCCESS(PhOpenProcess(&processHandle, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, ProcessNode->ProcessId)))
+        else if (PH_IS_REAL_PROCESS_ID(ProcessNode->ProcessItem->ProcessId))
         {
-            if (NT_SUCCESS(PhGetProcessSwitchContext(processHandle, &ProcessNode->OsContextGuid)))
+            if (NT_SUCCESS(PhOpenProcess(&processHandle, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, ProcessNode->ProcessId)))
             {
-                if (IsEqualGUID(&ProcessNode->OsContextGuid, &WIN10_CONTEXT_GUID))
-                    ProcessNode->OsContextVersion = WINDOWS_10;
-                else if (IsEqualGUID(&ProcessNode->OsContextGuid, &WINBLUE_CONTEXT_GUID))
-                    ProcessNode->OsContextVersion = WINDOWS_8_1;
-                else if (IsEqualGUID(&ProcessNode->OsContextGuid, &WIN8_CONTEXT_GUID))
-                    ProcessNode->OsContextVersion = WINDOWS_8;
-                else if (IsEqualGUID(&ProcessNode->OsContextGuid, &WIN7_CONTEXT_GUID))
-                    ProcessNode->OsContextVersion = WINDOWS_7;
-                else if (IsEqualGUID(&ProcessNode->OsContextGuid, &VISTA_CONTEXT_GUID))
-                    ProcessNode->OsContextVersion = WINDOWS_VISTA;
-                else if (IsEqualGUID(&ProcessNode->OsContextGuid, &XP_CONTEXT_GUID))
-                    ProcessNode->OsContextVersion = WINDOWS_XP;
-            }
+                if (NT_SUCCESS(PhGetProcessSwitchContext(processHandle, &ProcessNode->OsContextGuid)))
+                {
+                    if (IsEqualGUID(&ProcessNode->OsContextGuid, &WIN10_CONTEXT_GUID))
+                        ProcessNode->OsContextVersion = WINDOWS_10;
+                    else if (IsEqualGUID(&ProcessNode->OsContextGuid, &WINBLUE_CONTEXT_GUID))
+                        ProcessNode->OsContextVersion = WINDOWS_8_1;
+                    else if (IsEqualGUID(&ProcessNode->OsContextGuid, &WIN8_CONTEXT_GUID))
+                        ProcessNode->OsContextVersion = WINDOWS_8;
+                    else if (IsEqualGUID(&ProcessNode->OsContextGuid, &WIN7_CONTEXT_GUID))
+                        ProcessNode->OsContextVersion = WINDOWS_7;
+                    else if (IsEqualGUID(&ProcessNode->OsContextGuid, &VISTA_CONTEXT_GUID))
+                        ProcessNode->OsContextVersion = WINDOWS_VISTA;
+                    else if (IsEqualGUID(&ProcessNode->OsContextGuid, &XP_CONTEXT_GUID))
+                        ProcessNode->OsContextVersion = WINDOWS_XP;
+                }
 
-            NtClose(processHandle);
+                NtClose(processHandle);
+            }
         }
 
         ProcessNode->ValidMask |= PHPN_OSCONTEXT;
@@ -1065,7 +1058,7 @@ static VOID PhpUpdateProcessNodeImage(
         {
             ProcessNode->ImageSubsystem = IMAGE_SUBSYSTEM_POSIX_CUI;
         }
-        else
+        else if (PH_IS_REAL_PROCESS_ID(ProcessNode->ProcessItem->ProcessId))
         {
             HANDLE processHandle;
             PROCESS_BASIC_INFORMATION basicInfo;
@@ -1270,20 +1263,23 @@ static VOID PhpUpdateProcessNodeDesktopInfo(
 
         PhClearReference(&ProcessNode->DesktopInfoText);
 
-        if (NT_SUCCESS(PhOpenProcess(
-            &processHandle,
-            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
-            ProcessNode->ProcessId
-            )))
+        if (PH_IS_REAL_PROCESS_ID(ProcessNode->ProcessItem->ProcessId))
         {
-            PPH_STRING desktopinfo;
-
-            if (NT_SUCCESS(PhGetProcessDesktopInfo(processHandle, &desktopinfo)))
+            if (NT_SUCCESS(PhOpenProcess(
+                &processHandle,
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+                ProcessNode->ProcessId
+                )))
             {
-                ProcessNode->DesktopInfoText = desktopinfo;
-            }
+                PPH_STRING desktopinfo;
 
-            NtClose(processHandle);
+                if (NT_SUCCESS(PhGetProcessDesktopInfo(processHandle, &desktopinfo)))
+                {
+                    ProcessNode->DesktopInfoText = desktopinfo;
+                }
+
+                NtClose(processHandle);
+            }
         }
 
         ProcessNode->ValidMask |= PHPN_DESKTOPINFO;
@@ -1970,18 +1966,7 @@ END_SORT_FUNCTION
 
 BEGIN_SORT_FUNCTION(ImageCoherency)
 {
-    if (processItem1->ImageCoherency < processItem2->ImageCoherency)
-    {
-        sortResult = -1;
-    }
-    else if (processItem1->ImageCoherency > processItem2->ImageCoherency)
-    {
-        sortResult = 1;
-    }
-    else
-    {
-        sortResult = 0;
-    }
+    sortResult = singlecmp(processItem1->ImageCoherency, processItem2->ImageCoherency);
 }
 END_SORT_FUNCTION
 
@@ -3039,7 +3024,6 @@ BOOLEAN NTAPI PhpProcessTreeNewCallback(
                 break;
             case PHPRTLC_IMAGE_COHERENCY:
                 {
-                    FLOAT imageCoherency;
                     PH_FORMAT format[2];
                     SIZE_T returnLength;
 
@@ -3048,15 +3032,10 @@ BOOLEAN NTAPI PhpProcessTreeNewCallback(
                         break;
                     }
 
-                    imageCoherency = (FLOAT)((DOUBLE)processItem->ImageCoherency * 100.0f);
-
-                    PhInitFormatF(&format[0], imageCoherency, 2);
+                    PhInitFormatF(&format[0], (DOUBLE)(processItem->ImageCoherency * 100.0f), 2);
                     PhInitFormatS(&format[1], L"%");
 
-                    if (PhFormatToBuffer(format, RTL_NUMBER_OF(format),
-                                         node->ImageCoherencyText,
-                                         sizeof(node->ImageCoherencyText),
-                                         &returnLength))
+                    if (PhFormatToBuffer(format, RTL_NUMBER_OF(format), node->ImageCoherencyText, sizeof(node->ImageCoherencyText), &returnLength))
                     {
                         getCellText->Text.Buffer = node->ImageCoherencyText;
                         getCellText->Text.Length = returnLength - sizeof(UNICODE_NULL);
