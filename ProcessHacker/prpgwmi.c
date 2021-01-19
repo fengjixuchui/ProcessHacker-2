@@ -110,15 +110,15 @@ HRESULT PhpWmiProviderExecMethod(
     if (FAILED(status))
         goto CleanupExit;
 
-    wbemResourceString = SysAllocString(L"root\\CIMV2");
+    wbemResourceString = SysAllocString(L"Root\\CIMV2");
     status = IWbemLocator_ConnectServer(
         wbemLocator,
         wbemResourceString,
         NULL,
         NULL,
         NULL,
-        0,
-        0,
+        WBEM_FLAG_CONNECT_USE_MAX_WAIT,
+        NULL,
         NULL,
         &wbemServices
         );
@@ -164,7 +164,7 @@ HRESULT PhpWmiProviderExecMethod(
 
         if (SUCCEEDED(IWbemClassObject_Get(wbemClassObject, L"Namespace", 0, &variant, 0, 0)))
         {
-            namespacePath = PhCreateString(variant.bstrVal);
+            namespacePath = PhCreateString(V_BSTR(&variant));
             VariantClear(&variant);
         }
 
@@ -172,7 +172,7 @@ HRESULT PhpWmiProviderExecMethod(
 
         if (SUCCEEDED(IWbemClassObject_Get(wbemClassObject, L"Provider", 0, &variant, 0, 0)))
         {
-            providerName = PhCreateString(variant.bstrVal);
+            providerName = PhCreateString(V_BSTR(&variant));
             VariantClear(&variant);
         }
 
@@ -180,7 +180,7 @@ HRESULT PhpWmiProviderExecMethod(
 
         if (SUCCEEDED(IWbemClassObject_Get(wbemClassObject, L"User", 0, &variant, 0, 0)))
         {
-            userName = PhCreateString(variant.bstrVal);
+            userName = PhCreateString(V_BSTR(&variant));
             VariantClear(&variant);
         }
 
@@ -188,7 +188,7 @@ HRESULT PhpWmiProviderExecMethod(
 
         if (SUCCEEDED(IWbemClassObject_Get(wbemClassObject, L"__PATH", 0, &variant, 0, 0)))
         {
-            instancePath = PhCreateString(variant.bstrVal);
+            instancePath = PhCreateString(V_BSTR(&variant));
             VariantClear(&variant);
         }
 
@@ -290,8 +290,8 @@ HRESULT PhpQueryWmiProviderFileName(
         NULL,
         NULL,
         NULL,
-        0,
-        0,
+        WBEM_FLAG_CONNECT_USE_MAX_WAIT,
+        NULL,
         NULL,
         &wbemServices
         );
@@ -332,9 +332,9 @@ HRESULT PhpQueryWmiProviderFileName(
 
         if (SUCCEEDED(IWbemClassObject_Get(wbemClassObject, L"CLSID", 0, &variant, 0, 0)))
         {
-            if (variant.bstrVal) // returns NULL for some host processes (dmex)
+            if (V_BSTR(&variant)) // returns NULL for some host processes (dmex)
             {
-                clsidString = PhCreateString(variant.bstrVal);
+                clsidString = PhCreateString(V_BSTR(&variant));
             }
 
             VariantClear(&variant);
@@ -437,15 +437,15 @@ PPH_LIST PhpQueryWmiProviderHostProcess(
     if (FAILED(status))
         goto CleanupExit;
 
-    wbemResourceString = SysAllocString(L"root\\CIMV2");
+    wbemResourceString = SysAllocString(L"Root\\CIMV2");
     status = IWbemLocator_ConnectServer(
         wbemLocator,
         wbemResourceString,
         NULL,
         NULL,
         NULL,
-        0,
-        0,
+        WBEM_FLAG_CONNECT_USE_MAX_WAIT,
+        NULL,
         NULL,
         &wbemServices
         );
@@ -493,7 +493,7 @@ PPH_LIST PhpQueryWmiProviderHostProcess(
 
         if (SUCCEEDED(IWbemClassObject_Get(wbemClassObject, L"Namespace", 0, &variant, 0, 0)))
         {
-            entry->NamespacePath = PhCreateString(variant.bstrVal);
+            entry->NamespacePath = PhCreateString(V_BSTR(&variant));
             VariantClear(&variant);
         }
 
@@ -501,7 +501,7 @@ PPH_LIST PhpQueryWmiProviderHostProcess(
 
         if (SUCCEEDED(IWbemClassObject_Get(wbemClassObject, L"Provider", 0, &variant, 0, 0)))
         {
-            entry->ProviderName = PhCreateString(variant.bstrVal);
+            entry->ProviderName = PhCreateString(V_BSTR(&variant));
             VariantClear(&variant);
         }
 
@@ -509,7 +509,7 @@ PPH_LIST PhpQueryWmiProviderHostProcess(
 
         if (SUCCEEDED(IWbemClassObject_Get(wbemClassObject, L"User", 0, &variant, 0, 0)))
         {
-            entry->UserName = PhCreateString(variant.bstrVal);
+            entry->UserName = PhCreateString(V_BSTR(&variant));
             VariantClear(&variant);
         }
 
