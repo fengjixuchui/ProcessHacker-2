@@ -466,7 +466,9 @@ typedef struct _PH_IMAGE_RESOURCE_ENTRY
     ULONG_PTR Type;
     ULONG_PTR Name;
     ULONG_PTR Language;
+    ULONG Offset;
     ULONG Size;
+    ULONG CodePage;
     PVOID Data;
 } PH_IMAGE_RESOURCE_ENTRY, *PPH_IMAGE_RESOURCE_ENTRY;
 
@@ -798,7 +800,7 @@ typedef struct _PH_MAPPED_IMAGE_RELOC
 {
     PPH_MAPPED_IMAGE MappedImage;
     PIMAGE_DATA_DIRECTORY DataDirectory;
-    PIMAGE_BASE_RELOCATION RelocationDirectory;
+    PIMAGE_BASE_RELOCATION FirstRelocationDirectory;
 
     ULONG NumberOfEntries;
     PPH_IMAGE_RELOC_ENTRY RelocationEntries;

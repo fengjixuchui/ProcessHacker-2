@@ -3,7 +3,7 @@
  *   mapped image
  *
  * Copyright (C) 2010 wj32
- * Copyright (C) 2017-2019 dmex
+ * Copyright (C) 2017-2021 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -1614,9 +1614,9 @@ NTSTATUS PhGetMappedImageCfg64(
     CfgConfig->CfgLongJumpTablePresent = !!(config64->GuardFlags & IMAGE_GUARD_CF_LONGJUMP_TABLE_PRESENT);
 
     CfgConfig->NumberOfGuardFunctionEntries = config64->GuardCFFunctionCount;
-    CfgConfig->GuardFunctionTable = PhMappedImageRvaToVa(
+    CfgConfig->GuardFunctionTable = PhMappedImageVaToVa(
         MappedImage,
-        (ULONG)(config64->GuardCFFunctionTable - MappedImage->NtHeaders->OptionalHeader.ImageBase),
+        (ULONG)config64->GuardCFFunctionTable,
         NULL
         );
 
@@ -1642,9 +1642,9 @@ NTSTATUS PhGetMappedImageCfg64(
     if (RTL_CONTAINS_FIELD(config64, config64->Size, GuardAddressTakenIatEntryTable))
     {
         CfgConfig->NumberOfGuardAdressIatEntries = config64->GuardAddressTakenIatEntryCount;
-        CfgConfig->GuardAdressIatTable = PhMappedImageRvaToVa(
+        CfgConfig->GuardAdressIatTable = PhMappedImageVaToVa(
             MappedImage,
-            (ULONG)(config64->GuardAddressTakenIatEntryTable - MappedImage->NtHeaders->OptionalHeader.ImageBase),
+            (ULONG)config64->GuardAddressTakenIatEntryTable,
             NULL
             );
 
@@ -1671,9 +1671,9 @@ NTSTATUS PhGetMappedImageCfg64(
     if (RTL_CONTAINS_FIELD(config64, config64->Size, GuardLongJumpTargetTable))
     {
         CfgConfig->NumberOfGuardLongJumpEntries = config64->GuardLongJumpTargetCount;
-        CfgConfig->GuardLongJumpTable = PhMappedImageRvaToVa(
+        CfgConfig->GuardLongJumpTable = PhMappedImageVaToVa(
             MappedImage,
-            (ULONG)(config64->GuardLongJumpTargetTable - MappedImage->NtHeaders->OptionalHeader.ImageBase),
+            (ULONG)config64->GuardLongJumpTargetTable,
             NULL
             );
 
@@ -1726,9 +1726,9 @@ NTSTATUS PhGetMappedImageCfg32(
     CfgConfig->CfgLongJumpTablePresent = !!(config32->GuardFlags & IMAGE_GUARD_CF_LONGJUMP_TABLE_PRESENT);
 
     CfgConfig->NumberOfGuardFunctionEntries = config32->GuardCFFunctionCount;
-    CfgConfig->GuardFunctionTable = PhMappedImageRvaToVa(
+    CfgConfig->GuardFunctionTable = PhMappedImageVaToVa(
         MappedImage,
-        config32->GuardCFFunctionTable - MappedImage->NtHeaders32->OptionalHeader.ImageBase,
+        config32->GuardCFFunctionTable,
         NULL
         );
     
@@ -1754,9 +1754,9 @@ NTSTATUS PhGetMappedImageCfg32(
     if (RTL_CONTAINS_FIELD(config32, config32->Size, GuardAddressTakenIatEntryTable))
     {
         CfgConfig->NumberOfGuardAdressIatEntries = config32->GuardAddressTakenIatEntryCount;
-        CfgConfig->GuardAdressIatTable = PhMappedImageRvaToVa(
+        CfgConfig->GuardAdressIatTable = PhMappedImageVaToVa(
             MappedImage,
-            config32->GuardAddressTakenIatEntryTable - MappedImage->NtHeaders32->OptionalHeader.ImageBase,
+            config32->GuardAddressTakenIatEntryTable,
             NULL
             );
 
@@ -1783,9 +1783,9 @@ NTSTATUS PhGetMappedImageCfg32(
     if (RTL_CONTAINS_FIELD(config32, config32->Size, GuardLongJumpTargetTable))
     {
         CfgConfig->NumberOfGuardLongJumpEntries = config32->GuardLongJumpTargetCount;
-        CfgConfig->GuardLongJumpTable = PhMappedImageRvaToVa(
+        CfgConfig->GuardLongJumpTable = PhMappedImageVaToVa(
             MappedImage,
-            config32->GuardLongJumpTargetTable - MappedImage->NtHeaders32->OptionalHeader.ImageBase,
+            config32->GuardLongJumpTargetTable,
             NULL
             );
 
@@ -2008,8 +2008,10 @@ NTSTATUS PhGetMappedImageResources(
                     entry.Type = NAME_FROM_RESOURCE_ENTRY(resourceDirectory, resourceType);
                     entry.Name = NAME_FROM_RESOURCE_ENTRY(resourceDirectory, resourceName);
                     entry.Language = NAME_FROM_RESOURCE_ENTRY(resourceDirectory, resourceLanguage);
-                    entry.Data = PhMappedImageRvaToVa(MappedImage, resourceData->OffsetToData, NULL);
+                    entry.Offset = resourceData->OffsetToData;
                     entry.Size = resourceData->Size;
+                    entry.CodePage = resourceData->CodePage;
+                    entry.Data = PhMappedImageRvaToVa(MappedImage, resourceData->OffsetToData, NULL);
 
                     PhAddItemArray(&resourceArray, &entry);
                 }
@@ -2378,7 +2380,7 @@ NTSTATUS PhGetMappedImageProdIdHeader(
         if (PhIsNullOrEmptyString(hashString))
             return STATUS_FAIL_CHECK;
         
-        // Do a scan to determine how many enries there are.
+        // Do a scan to determine how many entries there are.
         for (offset = currentAddress; offset < currentEnd; offset += sizeof(PRODITEM))
         {
             currentCount++;
@@ -2656,7 +2658,7 @@ NTSTATUS PhGetMappedImageEhCont32(
     if (!RTL_CONTAINS_FIELD(config32, config32->Size, GuardEHContinuationCount))
         return STATUS_INVALID_VIEW_SIZE;
 
-    EhContConfig->EhContTable = PhMappedImageRvaToVa(MappedImage, (ULONG)(config32->GuardEHContinuationTable - MappedImage->NtHeaders32->OptionalHeader.ImageBase), NULL);
+    EhContConfig->EhContTable = PhMappedImageVaToVa(MappedImage, config32->GuardEHContinuationTable, NULL);
     EhContConfig->NumberOfEhContEntries = config32->GuardEHContinuationCount;
 
     // taken from from nt!RtlGuardRestoreContext
@@ -2696,7 +2698,7 @@ NTSTATUS PhGetMappedImageEhCont64(
     if (!RTL_CONTAINS_FIELD(config64, config64->Size, GuardEHContinuationCount))
         return STATUS_INVALID_VIEW_SIZE;
 
-    EhContConfig->EhContTable = PhMappedImageRvaToVa(MappedImage, (ULONG)(config64->GuardEHContinuationTable - MappedImage->NtHeaders->OptionalHeader.ImageBase), NULL);
+    EhContConfig->EhContTable = PhMappedImageVaToVa(MappedImage, (ULONG)config64->GuardEHContinuationTable, NULL);
     EhContConfig->NumberOfEhContEntries = config64->GuardEHContinuationCount;
 
     // taken from from nt!RtlGuardRestoreContext
@@ -2851,7 +2853,7 @@ NTSTATUS PhGetMappedImagePogo(
 
     debugPogoEntry = PTR_ADD_OFFSET(debugEntry, sizeof(IMAGE_DEBUG_POGO_SIGNATURE));
 
-    // Do a scan to determine how many enries there are.
+    // Do a scan to determine how many entries there are.
 
     while ((ULONG_PTR)debugPogoEntry < (ULONG_PTR)PTR_ADD_OFFSET(debugEntry, debugEntryLength))
     {
@@ -2919,8 +2921,10 @@ NTSTATUS PhGetMappedImageRelocations(
     NTSTATUS status;
     PIMAGE_DATA_DIRECTORY dataDirectory;
     PIMAGE_BASE_RELOCATION relocationDirectory;
+    PVOID relocationDirectoryEnd;
     PH_ARRAY relocationArray;
-    ULONG index = 0;
+    ULONG relocationTotal = 0;
+    ULONG relocationIndex = 0;
 
     status = PhGetMappedImageDataEntry(
         MappedImage,
@@ -2951,66 +2955,72 @@ NTSTATUS PhGetMappedImageRelocations(
 
     Relocations->MappedImage = MappedImage;
     Relocations->DataDirectory = dataDirectory;
-    Relocations->RelocationDirectory = relocationDirectory;
+    Relocations->FirstRelocationDirectory = relocationDirectory;
 
-    // Allocate the number of relocation entries.
+    //
+    // Do a scan to determine how many entries there are. And validate the
+    // blocks are within the mapping.
+    //
 
-    PhInitializeArray(&relocationArray, sizeof(PH_IMAGE_RELOC_ENTRY), 0x1000);
+    relocationDirectory = Relocations->FirstRelocationDirectory;
+    relocationDirectoryEnd = PTR_ADD_OFFSET(relocationDirectory, dataDirectory->Size);
 
-    // Add the debug entries into our buffer.
-
-    relocationDirectory = Relocations->RelocationDirectory;
-
-    while ((ULONG_PTR)relocationDirectory < (ULONG_PTR)PTR_ADD_OFFSET(relocationDirectory, dataDirectory->Size))
+    while ((ULONG_PTR)relocationDirectory < (ULONG_PTR)relocationDirectoryEnd)
     {
-        ULONG relocationCount;
-        PVOID relocationAddress;
-        PIMAGE_BASE_RELOCATION_ENTRY relocationEntry;
-
         __try
         {
             PhpMappedImageProbe(MappedImage, relocationDirectory, sizeof(IMAGE_BASE_RELOCATION));
+            PhpMappedImageProbe(MappedImage, relocationDirectory, relocationDirectory->SizeOfBlock);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             return GetExceptionCode();
         }
 
-        if (relocationDirectory->SizeOfBlock == 0)
+        if (relocationDirectory->SizeOfBlock < sizeof(IMAGE_BASE_RELOCATION))
         {
-            break;
+            //
+            // Prevent runaway.
+            //
+            return STATUS_INVALID_IMAGE_FORMAT;
         }
+
+        relocationTotal += (relocationDirectory->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(IMAGE_BASE_RELOCATION_ENTRY);
+        relocationDirectory = PTR_ADD_OFFSET(relocationDirectory, relocationDirectory->SizeOfBlock);
+    }
+
+    // Allocate the number of relocation entries.
+
+    PhInitializeArray(&relocationArray, sizeof(PH_IMAGE_RELOC_ENTRY), relocationTotal);
+
+    // Add the relocation entries into our buffer.
+
+    relocationDirectory = Relocations->FirstRelocationDirectory;
+
+    while ((ULONG_PTR)relocationDirectory < (ULONG_PTR)relocationDirectoryEnd)
+    {
+        ULONG relocationCount;
+        PVOID relocationAddress;
+        PIMAGE_BASE_RELOCATION_ENTRY relocations;
 
         relocationCount = (relocationDirectory->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(IMAGE_BASE_RELOCATION_ENTRY);
         relocationAddress = PTR_ADD_OFFSET(MappedImage->ViewBase, relocationDirectory->VirtualAddress);
-        relocationEntry = PTR_ADD_OFFSET(relocationDirectory, RTL_SIZEOF_THROUGH_FIELD(IMAGE_BASE_RELOCATION, SizeOfBlock));
+        relocations = PTR_ADD_OFFSET(relocationDirectory, RTL_SIZEOF_THROUGH_FIELD(IMAGE_BASE_RELOCATION, SizeOfBlock));
 
         for (ULONG i = 0; i < relocationCount; i++)
         {
             PH_IMAGE_RELOC_ENTRY entry;
 
-            __try
-            {
-                PhpMappedImageProbe(MappedImage, relocationEntry, sizeof(IMAGE_BASE_RELOCATION_ENTRY));
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                return GetExceptionCode();
-            }
-
-            entry.BlockIndex = index;
-            entry.Type = relocationEntry->Type;
-            entry.Offset = relocationEntry->Offset;
-            entry.Value = PTR_ADD_OFFSET(relocationAddress, relocationEntry->Offset);
+            entry.BlockIndex = relocationIndex;
+            entry.Type = relocations[i].Type;
+            entry.Offset = relocations[i].Offset;
+            entry.Value = PTR_ADD_OFFSET(relocationAddress, relocations[i].Offset);
             entry.BlockRva = relocationDirectory->VirtualAddress;
-
             PhAddItemArray(&relocationArray, &entry);
-
-            relocationEntry = PTR_ADD_OFFSET(relocationEntry, sizeof(IMAGE_BASE_RELOCATION_ENTRY));
         }
 
-        relocationDirectory = (PIMAGE_BASE_RELOCATION)relocationEntry;
-        index++;
+        relocationDirectory = PTR_ADD_OFFSET(relocationDirectory, relocationDirectory->SizeOfBlock);
+        relocationIndex++;
     }
 
     Relocations->NumberOfEntries = (ULONG)relocationArray.Count;
@@ -3026,6 +3036,7 @@ VOID PhFreeMappedImageRelocations(
     if (Relocations && Relocations->RelocationEntries)
     {
         PhFree(Relocations->RelocationEntries);
+        Relocations->RelocationEntries = NULL;
         Relocations->NumberOfEntries = 0;
     }
 }

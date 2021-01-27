@@ -4,7 +4,7 @@
  *
  * Copyright (C) 2010 wj32
  * Copyright (C) 2010 evilpie
- * Copyright (C) 2016-2019 dmex
+ * Copyright (C) 2016-2021 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -356,32 +356,71 @@ PPH_STRING PhpGetDnsReverseNameFromAddress(
     _In_ PPH_IP_ADDRESS Address
     )
 {
+#define IP4_REVERSE_DOMAIN_STRING_LENGTH (IP4_ADDRESS_STRING_LENGTH + sizeof(DNS_IP4_REVERSE_DOMAIN_STRING_W) + 1)
+#define IP6_REVERSE_DOMAIN_STRING_LENGTH (IP6_ADDRESS_STRING_LENGTH + sizeof(DNS_IP6_REVERSE_DOMAIN_STRING_W) + 1)
+
     switch (Address->Type)
     {
     case PH_IPV4_NETWORK_TYPE:
         {
-            PH_STRING_BUILDER stringBuilder;
+            PH_FORMAT format[9];
+            SIZE_T returnLength;
+            WCHAR reverseNameBuffer[IP4_REVERSE_DOMAIN_STRING_LENGTH];
 
-            PhInitializeStringBuilder(&stringBuilder, DNS_MAX_IP4_REVERSE_NAME_LENGTH);
+            PhInitFormatU(&format[0], Address->InAddr.s_impno);
+            PhInitFormatC(&format[1], L'.');
+            PhInitFormatU(&format[2], Address->InAddr.s_lh);
+            PhInitFormatC(&format[3], L'.');
+            PhInitFormatU(&format[4], Address->InAddr.s_host);
+            PhInitFormatC(&format[5], L'.');
+            PhInitFormatU(&format[6], Address->InAddr.s_net);
+            PhInitFormatC(&format[7], L'.');
+            PhInitFormatS(&format[8], DNS_IP4_REVERSE_DOMAIN_STRING);
 
-            PhAppendFormatStringBuilder(
-                &stringBuilder,
-                L"%hhu.%hhu.%hhu.%hhu.",
-                Address->InAddr.s_impno,
-                Address->InAddr.s_lh,
-                Address->InAddr.s_host,
-                Address->InAddr.s_net
-                );
+            if (PhFormatToBuffer(
+                format,
+                RTL_NUMBER_OF(format),
+                reverseNameBuffer,
+                sizeof(reverseNameBuffer),
+                &returnLength
+                ))
+            {
+                PH_STRINGREF reverseNameString;
 
-            PhAppendStringBuilder2(&stringBuilder, DNS_IP4_REVERSE_DOMAIN_STRING);
+                reverseNameString.Buffer = reverseNameBuffer;
+                reverseNameString.Length = returnLength - sizeof(UNICODE_NULL);
 
-            return PhFinalStringBuilderString(&stringBuilder);
+                return PhCreateString2(&reverseNameString);
+            }
+            else
+            {
+                return PhFormat(format, RTL_NUMBER_OF(format), IP4_REVERSE_DOMAIN_STRING_LENGTH);
+            }
+            
+            //PH_STRING_BUILDER stringBuilder;
+            //
+            //// DNS_MAX_IP4_REVERSE_NAME_LENGTH
+            //PhInitializeStringBuilder(&stringBuilder, IP4_REVERSE_DOMAIN_STRING_LENGTH);
+            //
+            //PhAppendFormatStringBuilder(
+            //    &stringBuilder,
+            //    L"%hhu.%hhu.%hhu.%hhu.",
+            //    Address->InAddr.s_impno,
+            //    Address->InAddr.s_lh,
+            //    Address->InAddr.s_host,
+            //    Address->InAddr.s_net
+            //    );
+            //
+            //PhAppendStringBuilder2(&stringBuilder, DNS_IP4_REVERSE_DOMAIN_STRING);
+            //
+            //return PhFinalStringBuilderString(&stringBuilder);
         }
     case PH_IPV6_NETWORK_TYPE:
         {
             PH_STRING_BUILDER stringBuilder;
 
-            PhInitializeStringBuilder(&stringBuilder, DNS_MAX_IP6_REVERSE_NAME_LENGTH);
+            // DNS_MAX_IP6_REVERSE_NAME_LENGTH
+            PhInitializeStringBuilder(&stringBuilder, IP6_REVERSE_DOMAIN_STRING_LENGTH);
 
             for (INT i = sizeof(IN6_ADDR) - 1; i >= 0; i--)
             {
@@ -408,8 +447,8 @@ PPH_STRING PhGetHostNameFromAddressEx(
 {
     BOOLEAN dnsLocalQuery = FALSE;
     PPH_STRING dnsHostNameString = NULL;
-    PPH_STRING dnsReverseNameString = NULL;
-    PDNS_RECORD dnsRecordList = NULL;
+    PPH_STRING dnsReverseNameString;
+    PDNS_RECORD dnsRecordList;
 
     switch (Address->Type)
     {
@@ -456,15 +495,13 @@ PPH_STRING PhGetHostNameFromAddressEx(
             DNS_TYPE_PTR
             );
     }
-    else if (DnsQuery_W_Import())
+    else
     {
-        DnsQuery_W_Import()(
+        dnsRecordList = PhDnsQuery2(
+            NULL,
             dnsReverseNameString->Buffer,
             DNS_TYPE_PTR,
-            DNS_QUERY_BYPASS_CACHE | DNS_QUERY_NO_HOSTS_FILE,
-            NULL,
-            &dnsRecordList,
-            NULL
+            DNS_QUERY_NO_HOSTS_FILE // DNS_QUERY_BYPASS_CACHE
             );
     }
     
