@@ -2,7 +2,7 @@
  * Process Hacker Network Tools -
  *   Whois dialog
  *
- * Copyright (C) 2013-2020 dmex
+ * Copyright (C) 2013-2021 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -21,8 +21,10 @@
  */
 
 #include "nettools.h"
-#include <commonutil.h>
 #include <richedit.h>
+
+PPH_OBJECT_TYPE WhoisContextType = NULL;
+PH_INITONCE WhoisContextTypeInitOnce = PH_INITONCE_INIT;
 
 VOID RichEditSetText(
     _In_ HWND RichEditHandle,
@@ -122,7 +124,7 @@ BOOLEAN ReadSocketString(
         dataLength += returnLength;
     }
 
-    if (allocatedLength < dataLength + 1)
+    if (allocatedLength < dataLength + sizeof(ANSI_NULL))
     {
         allocatedLength++;
         data = (PSTR)PhReAllocate(data, allocatedLength);
@@ -181,9 +183,9 @@ BOOLEAN WhoisExtractServerUrl(
     ULONG_PTR whoisServerHostnameLength;
     PPH_STRING whoisServerName;
 
-    if ((whoisServerHostnameIndex = PhFindStringInString(WhoisResponse, 0, L"whois:")) == -1)
+    if ((whoisServerHostnameIndex = PhFindStringInString(WhoisResponse, 0, L"whois:")) == SIZE_MAX)
         return FALSE;
-    if ((whoisServerHostnameLength = PhFindStringInString(WhoisResponse, whoisServerHostnameIndex, L"\n")) == -1)
+    if ((whoisServerHostnameLength = PhFindStringInString(WhoisResponse, whoisServerHostnameIndex, L"\n")) == SIZE_MAX)
         return FALSE;
     if ((whoisServerHostnameLength = whoisServerHostnameLength - whoisServerHostnameIndex) == 0)
         return FALSE;
@@ -217,9 +219,9 @@ BOOLEAN WhoisExtractReferralServer(
     WCHAR urlPort[0x100] = L"";
     WCHAR urlPath[0x100] = L"";
 
-    if ((whoisServerHostnameIndex = PhFindStringInString(WhoisResponse, 0, L"ReferralServer:")) == -1)
+    if ((whoisServerHostnameIndex = PhFindStringInString(WhoisResponse, 0, L"ReferralServer:")) == SIZE_MAX)
         return FALSE;
-    if ((whoisServerHostnameLength = PhFindStringInString(WhoisResponse, whoisServerHostnameIndex, L"\n")) == -1)
+    if ((whoisServerHostnameLength = PhFindStringInString(WhoisResponse, whoisServerHostnameIndex, L"\n")) == SIZE_MAX)
         return FALSE;
     if ((whoisServerHostnameLength = whoisServerHostnameLength - whoisServerHostnameIndex) == 0)
         return FALSE;
@@ -293,11 +295,23 @@ BOOLEAN WhoisConnectServer(
     SOCKET whoisSocketHandle = INVALID_SOCKET;
     PDNS_RECORD dnsRecordList;
 
-    dnsRecordList = PhDnsQuery(
-        NULL,
-        WhoisServerAddress,
-        DnsQueryMessageType
-        );
+    if (PhGetIntegerSetting(L"EnableNetworkResolveDoH"))
+    {
+        dnsRecordList = PhDnsQuery(
+            NULL,
+            WhoisServerAddress,
+            DnsQueryMessageType
+            );
+    }
+    else
+    {
+        dnsRecordList = PhDnsQuery2(
+            NULL,
+            WhoisServerAddress,
+            DnsQueryMessageType,
+            DNS_QUERY_NO_HOSTS_FILE // DNS_QUERY_BYPASS_CACHE
+            );
+    }
 
     if (!dnsRecordList)
         return FALSE;
@@ -320,6 +334,31 @@ BOOLEAN WhoisConnectServer(
 
             if ((whoisSocketHandle = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0)) != INVALID_SOCKET)
             {
+                ULONG bestInterfaceIndex;
+
+                if (GetBestInterfaceEx((PSOCKADDR)&remoteAddr, &bestInterfaceIndex) == ERROR_SUCCESS)
+                {
+                    MIB_IPFORWARD_ROW2 bestAddressRoute = { 0 };
+                    SOCKADDR_INET destinationAddress = { 0 };
+                    SOCKADDR_INET bestSourceAddress = { 0 };
+
+                    destinationAddress.si_family = AF_INET;
+                    destinationAddress.Ipv4 = remoteAddr;
+
+                    if (GetBestRoute2(
+                        NULL,
+                        bestInterfaceIndex,
+                        NULL,
+                        &destinationAddress,
+                        0,
+                        &bestAddressRoute,
+                        &bestSourceAddress
+                        ) == ERROR_SUCCESS)
+                    {
+                        bind(whoisSocketHandle, (PSOCKADDR)&bestSourceAddress.Ipv4, sizeof(bestSourceAddress.Ipv4));
+                    }
+                }
+
                 if (WSAConnect(whoisSocketHandle, (PSOCKADDR)&remoteAddr, sizeof(SOCKADDR_IN), NULL, NULL, NULL, NULL) != SOCKET_ERROR)
                     break;
 
@@ -343,6 +382,31 @@ BOOLEAN WhoisConnectServer(
 
             if ((whoisSocketHandle = WSASocket(AF_INET6, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0)) != INVALID_SOCKET)
             {
+                ULONG bestInterfaceIndex;
+
+                if (GetBestInterfaceEx((PSOCKADDR)&remoteAddr, &bestInterfaceIndex) == ERROR_SUCCESS)
+                {
+                    MIB_IPFORWARD_ROW2 bestAddressRoute = { 0 };
+                    SOCKADDR_INET destinationAddress = { 0 };
+                    SOCKADDR_INET bestSourceAddress = { 0 };
+
+                    destinationAddress.si_family = AF_INET6;
+                    destinationAddress.Ipv6 = remoteAddr;
+
+                    if (GetBestRoute2(
+                        NULL,
+                        bestInterfaceIndex,
+                        NULL,
+                        &destinationAddress,
+                        0,
+                        &bestAddressRoute,
+                        &bestSourceAddress
+                        ) == ERROR_SUCCESS)
+                    {
+                        bind(whoisSocketHandle, (PSOCKADDR)&bestSourceAddress.Ipv6, sizeof(bestSourceAddress.Ipv6));
+                    }
+                }
+
                 if (WSAConnect(whoisSocketHandle, (PSOCKADDR)&remoteAddr, sizeof(SOCKADDR_IN6), NULL, NULL, NULL, NULL) != SOCKET_ERROR)
                     break;
 
@@ -423,7 +487,7 @@ NTSTATUS NetworkWhoisThreadStart(
 {
     PNETWORK_WHOIS_CONTEXT context = (PNETWORK_WHOIS_CONTEXT)Parameter;
     WSADATA winsockStartup;
-    PH_STRING_BUILDER sb;
+    PH_STRING_BUILDER stringBuilder;
     PPH_STRING whoisResponse = NULL;
     PPH_STRING whoisReferralResponse = NULL;
     PPH_STRING whoisServerName = NULL;
@@ -431,25 +495,34 @@ NTSTATUS NetworkWhoisThreadStart(
     USHORT whoisReferralServerPort = IPPORT_WHOIS;
 
     if (WSAStartup(WINSOCK_VERSION, &winsockStartup) != ERROR_SUCCESS)
+    {
+        PhDereferenceObject(context);
         return STATUS_FAIL_CHECK;
+    }
 
-    PhInitializeStringBuilder(&sb, 0x100);
+    PhInitializeStringBuilder(&stringBuilder, 0x100);
 
-    SendMessage(context->WindowHandle, NTM_RECEIVEDWHOIS, 0, (LPARAM)PhCreateString(L"Connecting to whois.iana.org..."));
+    if (context->WindowHandle)
+    {
+        SendMessage(context->WindowHandle, NTM_RECEIVEDWHOIS, 0, (LPARAM)PhCreateString(L"Connecting to whois.iana.org..."));
+    }
 
     if (!WhoisQueryServer(L"whois.iana.org", IPPORT_WHOIS, context->IpAddressString, &whoisResponse))
     {
-        PhAppendFormatStringBuilder(&sb, L"Connection to whois.iana.org failed.\n");
+        PhAppendFormatStringBuilder(&stringBuilder, L"Connection to whois.iana.org failed.\n");
         goto CleanupExit;
     }
 
     if (!WhoisExtractServerUrl(whoisResponse, &whoisServerName))
     {
-        PhAppendFormatStringBuilder(&sb, L"Error parsing whois.iana.org response:\n%s\n", whoisResponse->Buffer);
+        PhAppendFormatStringBuilder(&stringBuilder, L"Error parsing whois.iana.org response:\n%s\n", whoisResponse->Buffer);
         goto CleanupExit;
     }
 
-    SendMessage(context->WindowHandle, NTM_RECEIVEDWHOIS, 0, (LPARAM)PhFormatString(L"Connecting to %s...", PhGetStringOrEmpty(whoisServerName)));
+    if (context->WindowHandle)
+    {
+        SendMessage(context->WindowHandle, NTM_RECEIVEDWHOIS, 0, (LPARAM)PhFormatString(L"Connecting to %s...", PhGetStringOrEmpty(whoisServerName)));
+    }
 
     if (WhoisQueryServer(
         PhGetString(whoisServerName),
@@ -464,14 +537,17 @@ NTSTATUS NetworkWhoisThreadStart(
             &whoisReferralServerPort
             ))
         {
-            SendMessage(context->WindowHandle, NTM_RECEIVEDWHOIS, 0, (LPARAM)PhFormatString(
-                L"%s referred the request to %s\n",
-                PhGetString(whoisServerName),
-                PhGetString(whoisReferralServerName)
-                ));
+            if (context->WindowHandle)
+            {
+                SendMessage(context->WindowHandle, NTM_RECEIVEDWHOIS, 0, (LPARAM)PhFormatString(
+                    L"%s referred the request to %s\n",
+                    PhGetString(whoisServerName),
+                    PhGetString(whoisReferralServerName)
+                    ));
+            }
 
             PhAppendFormatStringBuilder(
-                &sb, 
+                &stringBuilder,
                 L"%s referred the request to %s\n", 
                 PhGetString(whoisServerName), 
                 PhGetString(whoisReferralServerName)
@@ -484,23 +560,26 @@ NTSTATUS NetworkWhoisThreadStart(
                 &whoisReferralResponse
                 ))
             {
-                PhAppendFormatStringBuilder(&sb, L"\n%s\n", PhGetString(whoisReferralResponse));
-                PhAppendFormatStringBuilder(&sb, L"\nOriginal request to %s:\n%s\n", PhGetString(whoisServerName), PhGetString(whoisResponse));
+                PhAppendFormatStringBuilder(&stringBuilder, L"\n%s\n", PhGetString(whoisReferralResponse));
+                PhAppendFormatStringBuilder(&stringBuilder, L"\nOriginal request to %s:\n%s\n", PhGetString(whoisServerName), PhGetString(whoisResponse));
                 goto CleanupExit;
             }
         }
     }
     else
     {
-        PhAppendFormatStringBuilder(&sb, L"Connection to %s failed.\n", PhGetStringOrEmpty(whoisServerName));
+        PhAppendFormatStringBuilder(&stringBuilder, L"Connection to %s failed.\n", PhGetStringOrEmpty(whoisServerName));
         goto CleanupExit;
     }
 
-    PhAppendFormatStringBuilder(&sb, L"\n%s", PhGetString(whoisResponse));
+    PhAppendFormatStringBuilder(&stringBuilder, L"\n%s", PhGetString(whoisResponse));
 
 CleanupExit:
 
-    PostMessage(context->WindowHandle, NTM_RECEIVEDWHOIS, 0, (LPARAM)PhFinalStringBuilderString(&sb));
+    if (context->WindowHandle)
+        PostMessage(context->WindowHandle, NTM_RECEIVEDWHOIS, 0, (LPARAM)PhFinalStringBuilderString(&stringBuilder));
+    else
+        PhDeleteStringBuilder(&stringBuilder);
 
     WSACleanup();
 
@@ -512,6 +591,8 @@ CleanupExit:
         PhDereferenceObject(whoisServerName);
     if (whoisReferralServerName)
         PhDereferenceObject(whoisReferralServerName);
+
+    PhDereferenceObject(context);
 
     return STATUS_SUCCESS;
 }
@@ -539,6 +620,11 @@ INT_PTR CALLBACK NetworkOutputDlgProc(
             PhSaveWindowPlacementToSetting(SETTING_NAME_WHOIS_WINDOW_POSITION, SETTING_NAME_WHOIS_WINDOW_SIZE, hwndDlg);
             PhDeleteLayoutManager(&context->LayoutManager);
             PhRemoveWindowContext(hwndDlg, PH_WINDOW_CONTEXT_DEFAULT);
+
+            if (context->FontHandle)
+                DeleteFont(context->FontHandle);
+
+            context->WindowHandle = NULL;
             PhDereferenceObject(context);
 
             PostQuitMessage(0);
@@ -584,6 +670,7 @@ INT_PTR CALLBACK NetworkOutputDlgProc(
 
             PhInitializeWindowTheme(hwndDlg, !!PhGetIntegerSetting(L"EnableThemeSupport"));
 
+            PhReferenceObject(context);
             PhCreateThread2(NetworkWhoisThreadStart, (PVOID)context);
         }
         break;
@@ -766,15 +853,37 @@ NTSTATUS NetworkWhoisDialogThreadStart(
     return STATUS_SUCCESS;
 }
 
+VOID WhoisContextDeleteProcedure(
+    _In_ PVOID Object,
+    _In_ ULONG Flags
+    )
+{
+    NOTHING;
+}
+
+PNETWORK_WHOIS_CONTEXT CreateWhoisContext(
+    VOID
+    )
+{
+    PNETWORK_WHOIS_CONTEXT context;
+
+    if (PhBeginInitOnce(&WhoisContextTypeInitOnce))
+    {
+        WhoisContextType = PhCreateObjectType(L"WhoisContextObjectType", 0, WhoisContextDeleteProcedure);
+        PhEndInitOnce(&WhoisContextTypeInitOnce);
+    }
+
+    context = PhCreateObject(sizeof(NETWORK_WHOIS_CONTEXT), WhoisContextType);
+    memset(context, 0, sizeof(NETWORK_WHOIS_CONTEXT));
+
+    return context;
+}
 
 VOID ShowWhoisWindow(
     _In_ PPH_NETWORK_ITEM NetworkItem
     )
 {
-    PNETWORK_WHOIS_CONTEXT context;
-
-    context = (PNETWORK_WHOIS_CONTEXT)PhCreateAlloc(sizeof(NETWORK_WHOIS_CONTEXT));
-    memset(context, 0, sizeof(NETWORK_WHOIS_CONTEXT));
+    PNETWORK_WHOIS_CONTEXT context = CreateWhoisContext();
 
     RtlCopyMemory(
         &context->RemoteEndpoint,
@@ -789,10 +898,7 @@ VOID ShowWhoisWindowFromAddress(
     _In_ PH_IP_ENDPOINT RemoteEndpoint
     )
 {
-    PNETWORK_WHOIS_CONTEXT context;
-
-    context = (PNETWORK_WHOIS_CONTEXT)PhCreateAlloc(sizeof(NETWORK_WHOIS_CONTEXT));
-    memset(context, 0, sizeof(NETWORK_WHOIS_CONTEXT));
+    PNETWORK_WHOIS_CONTEXT context = CreateWhoisContext();
 
     RtlCopyMemory(
         &context->RemoteEndpoint,

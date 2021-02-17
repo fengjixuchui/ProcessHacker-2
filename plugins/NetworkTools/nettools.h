@@ -41,6 +41,7 @@
 #define SETTING_NAME_PING_WINDOW_POSITION (PLUGIN_NAME L".PingWindowPosition")
 #define SETTING_NAME_PING_WINDOW_SIZE (PLUGIN_NAME L".PingWindowSize")
 #define SETTING_NAME_PING_MINIMUM_SCALING (PLUGIN_NAME L".PingMinScaling")
+#define SETTING_NAME_PING_TIMEOUT (PLUGIN_NAME L".PingTimeout")
 #define SETTING_NAME_PING_SIZE (PLUGIN_NAME L".PingSize")
 #define SETTING_NAME_TRACERT_WINDOW_POSITION (PLUGIN_NAME L".TracertWindowPosition")
 #define SETTING_NAME_TRACERT_WINDOW_SIZE (PLUGIN_NAME L".TracertWindowSize")
@@ -109,8 +110,9 @@ typedef struct _NETWORK_PING_CONTEXT
     HWND PingGraphHandle;
     HFONT FontHandle;
 
+    ULONG PingTimeout;
     ULONG CurrentPingMs;
-    ULONG MaxPingTimeout;
+    ULONG MinPingScaling;
     ULONG HashFailCount;
     ULONG UnknownAddrCount;
     ULONG PingMinMs;
@@ -152,7 +154,7 @@ typedef struct _NETWORK_WHOIS_CONTEXT
     PH_LAYOUT_MANAGER LayoutManager;
 
     PH_IP_ENDPOINT RemoteEndpoint;
-    WCHAR IpAddressString[INET6_ADDRSTRLEN + 1];
+    WCHAR IpAddressString[INET6_ADDRSTRLEN + sizeof(UNICODE_NULL)];
 } NETWORK_WHOIS_CONTEXT, *PNETWORK_WHOIS_CONTEXT;
 
 // TDM_NAVIGATE_PAGE can not be called from other threads without comctl32.dll throwing access violations 

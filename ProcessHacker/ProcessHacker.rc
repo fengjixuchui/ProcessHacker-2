@@ -13,24 +13,6 @@
 #undef APSTUDIO_READONLY_SYMBOLS
 
 /////////////////////////////////////////////////////////////////////////////
-// English (United States) resources
-
-#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
-LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
-#pragma code_page(1252)
-
-/////////////////////////////////////////////////////////////////////////////
-//
-// RT_MANIFEST
-//
-
-IDR_RT_MANIFEST         RT_MANIFEST             "ProcessHacker.manifest"
-
-#endif    // English (United States) resources
-/////////////////////////////////////////////////////////////////////////////
-
-
-/////////////////////////////////////////////////////////////////////////////
 // English (Australia) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENA)
@@ -193,9 +175,9 @@ CAPTION "About"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     ICON            IDI_PROCESSHACKER,IDC_STATIC,16,11,21,20
-    LTEXT           "Process Hacker",IDC_ABOUT_NAME,45,10,192,8
+    CONTROL         "Process Hacker",IDC_ABOUT_NAME,"SysLink",WS_TABSTOP,45,10,192,8
     LTEXT           "Licensed under the GNU GPL, v3.",IDC_STATIC,45,23,193,8
-    LTEXT           "Copyright (c) 2008-2020",IDC_STATIC,45,36,80,8
+    LTEXT           "Copyright (c) 2008-2021",IDC_STATIC,45,36,80,8
     CONTROL         "Credits.",IDC_CREDITS,"SysLink",WS_TABSTOP,15,49,248,121
     CONTROL         "<a href=""https://processhacker.sourceforge.io"">Process Hacker on SourceForge.net</a>",IDC_LINK_SF,
                     "SysLink",WS_TABSTOP,7,177,130,11

@@ -93,7 +93,8 @@ PhMappedImageRvaToSection(
     );
 
 PHLIBAPI
-_Success_(return != NULL)
+_Must_inspect_result_
+_Ret_maybenull_
 PVOID
 NTAPI
 PhMappedImageRvaToVa(
@@ -103,7 +104,8 @@ PhMappedImageRvaToVa(
     );
 
 PHLIBAPI
-_Success_(return != NULL)
+_Must_inspect_result_
+_Ret_maybenull_
 PVOID
 NTAPI
 PhMappedImageVaToVa(
@@ -534,6 +536,7 @@ typedef struct _PH_MAPPED_IMAGE_PRODID
     //WCHAR Key[PH_PTR_STR_LEN_1];
     BOOLEAN Valid;
     PPH_STRING Key;
+    PPH_STRING RawHash;
     PPH_STRING Hash;
     ULONG NumberOfEntries;
     PPH_MAPPED_IMAGE_PRODID_ENTRY ProdIdEntries;
@@ -776,7 +779,10 @@ typedef struct _PH_MAPPED_IMAGE_DEBUG_POGO
     PPH_IMAGE_DEBUG_POGO_ENTRY PogoEntries;
 } PH_MAPPED_IMAGE_DEBUG_POGO, *PPH_MAPPED_IMAGE_DEBUG_POGO;
 
-NTSTATUS PhGetMappedImagePogo(
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetMappedImagePogo(
     _In_ PPH_MAPPED_IMAGE MappedImage,
     _Out_ PPH_MAPPED_IMAGE_DEBUG_POGO PogoDebug
     );
@@ -806,12 +812,17 @@ typedef struct _PH_MAPPED_IMAGE_RELOC
     PPH_IMAGE_RELOC_ENTRY RelocationEntries;
 } PH_MAPPED_IMAGE_RELOC, *PPH_MAPPED_IMAGE_RELOC;
 
-NTSTATUS PhGetMappedImageRelocations(
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetMappedImageRelocations(
     _In_ PPH_MAPPED_IMAGE MappedImage,
     _Out_ PPH_MAPPED_IMAGE_RELOC Relocations
     );
-
-VOID PhFreeMappedImageRelocations(
+PHLIBAPI
+VOID
+NTAPI
+PhFreeMappedImageRelocations(
     _In_ PPH_MAPPED_IMAGE_RELOC Relocations
     );
 

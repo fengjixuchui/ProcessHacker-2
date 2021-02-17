@@ -3109,13 +3109,16 @@ NTSTATUS PhGetFilePosition(
 
 NTSTATUS PhSetFilePosition(
     _In_ HANDLE FileHandle,
-    _In_ PLARGE_INTEGER Position
+    _In_opt_ PLARGE_INTEGER Position
     )
 {
     FILE_POSITION_INFORMATION positionInfo;
     IO_STATUS_BLOCK isb;
 
-    positionInfo.CurrentByteOffset = *Position;
+    if (Position)
+        positionInfo.CurrentByteOffset = *Position;
+    else
+        positionInfo.CurrentByteOffset.QuadPart = 0;
 
     return NtSetInformationFile(
         FileHandle,
@@ -8467,26 +8470,28 @@ NTSTATUS PhDeleteFileWin32(
     NTSTATUS status;
     HANDLE fileHandle;
 
-    if (WindowsVersion >= WINDOWS_10_RS5)
-    {
-        status = PhCreateFileWin32(
-            &fileHandle,
-            FileName,
-            DELETE,
-            FILE_ATTRIBUTE_NORMAL,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            FILE_OPEN,
-            FILE_NON_DIRECTORY_FILE
-            );
-
-        if (!NT_SUCCESS(status))
-            return status;
-
-        status = PhDeleteFile(fileHandle);
-
-        NtClose(fileHandle);
-    }
-    else
+    // Disabled due to an error deleting files with mapped references
+    // such as the mapped geoip database. See GH #794 (dmex)
+    //if (WindowsVersion >= WINDOWS_10_RS5)
+    //{
+    //    status = PhCreateFileWin32(
+    //        &fileHandle,
+    //        FileName,
+    //        DELETE,
+    //        FILE_ATTRIBUTE_NORMAL,
+    //        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    //        FILE_OPEN,
+    //        FILE_NON_DIRECTORY_FILE
+    //        );
+    //
+    //    if (!NT_SUCCESS(status))
+    //        return status;
+    //
+    //    status = PhDeleteFile(fileHandle);
+    //
+    //    NtClose(fileHandle);
+    //}
+    //else
     {
         status = PhCreateFileWin32(
             &fileHandle,
@@ -9861,3 +9866,70 @@ NTSTATUS PhQueryProcessHeapInformation(
 
     return STATUS_SUCCESS;
 }
+
+NTSTATUS PhGetProcessCodePage(
+    _In_ HANDLE ProcessHandle,
+    _Out_ PUSHORT ProcessCodePage
+    )
+{
+    NTSTATUS status;
+#ifdef _WIN64
+    BOOLEAN isWow64;
+#endif
+    USHORT codePage = 0;
+    PPH_STRING ntdllFileName;
+    PVOID nlsAnsiCodePage = NULL;
+
+#ifdef _WIN64
+    if (!NT_SUCCESS(status = PhGetProcessIsWow64(ProcessHandle, &isWow64)))
+        return status;
+
+    if (isWow64)
+    {
+        PH_STRINGREF systemRootSr;
+
+        PhGetSystemRoot(&systemRootSr);
+        ntdllFileName = PhConcatStringRefZ(&systemRootSr, L"\\SysWow64\\ntdll.dll");
+    }
+    else
+    {
+#endif
+        PH_STRINGREF systemRootSr;
+
+        PhGetSystemRoot(&systemRootSr);
+        ntdllFileName = PhConcatStringRefZ(&systemRootSr, L"\\System32\\ntdll.dll");
+#ifdef _WIN64
+    }
+#endif
+
+    status = PhGetProcedureAddressRemote(
+        ProcessHandle,
+        ntdllFileName->Buffer,
+        "NlsAnsiCodePage",
+        0,
+        &nlsAnsiCodePage,
+        NULL
+        );
+
+    if (!NT_SUCCESS(status))
+        goto CleanupExit;
+
+    status = NtReadVirtualMemory(
+        ProcessHandle,
+        nlsAnsiCodePage,
+        &codePage,
+        sizeof(USHORT),
+        NULL
+        );
+
+    if (NT_SUCCESS(status))
+    {
+        *ProcessCodePage = codePage;
+    }
+
+CleanupExit:
+    PhDereferenceObject(ntdllFileName);
+
+    return status;
+}
+

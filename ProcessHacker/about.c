@@ -3,7 +3,7 @@
  *   about dialog
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2017-2020 dmex
+ * Copyright (C) 2017-2021 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -56,10 +56,11 @@ static INT_PTR CALLBACK PhpAboutDlgProc(
 
 #if (PHAPP_VERSION_REVISION != 0)
             appName = PhFormatString(
-                L"Process Hacker %lu.%lu.%lu (%hs)",
+                L"Process Hacker %lu.%lu.%lu (<a href=\"https://github.com/processhacker/processhacker/commit/%hs\">%hs</a>)",
                 PHAPP_VERSION_MAJOR,
                 PHAPP_VERSION_MINOR,
                 PHAPP_VERSION_REVISION,
+                PHAPP_VERSION_COMMIT,
                 PHAPP_VERSION_COMMIT
                 );
 #else
@@ -127,6 +128,7 @@ static INT_PTR CALLBACK PhpAboutDlgProc(
                 {
                     switch (header->idFrom)
                     {
+                    case IDC_ABOUT_NAME:
                     case IDC_CREDITS:
                     case IDC_LINK_SF:
                         PhShellExecute(hwndDlg, ((PNMLINK)header)->item.szUrl, NULL);

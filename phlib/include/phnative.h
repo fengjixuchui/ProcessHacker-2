@@ -662,7 +662,7 @@ NTSTATUS
 NTAPI
 PhSetFilePosition(
     _In_ HANDLE FileHandle,
-    _In_ PLARGE_INTEGER Position
+    _In_opt_ PLARGE_INTEGER Position
     );
 
 PHLIBAPI
@@ -701,7 +701,7 @@ NTSTATUS
 NTAPI
 PhGetFileAllInformation(
     _In_ HANDLE FileHandle,
-    _Out_ PFILE_ALL_INFORMATION *FileId
+    _Out_ PFILE_ALL_INFORMATION *FileInformation
     );
 
 PHLIBAPI
@@ -1780,6 +1780,14 @@ NTAPI
 PhQueryProcessHeapInformation(
     _In_ HANDLE ProcessId,
     _Out_ PPH_PROCESS_DEBUG_HEAP_INFORMATION* HeapInformation
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetProcessCodePage(
+    _In_ HANDLE ProcessHandle,
+    _Out_ PUSHORT ProcessCodePage
     );
 
 #ifdef __cplusplus

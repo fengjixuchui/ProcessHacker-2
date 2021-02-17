@@ -21,13 +21,6 @@
  * along with Process Hacker.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/*
- * This file contains functions to load and retrieve information for image files (exe, dll). The
- * file format for image files is explained in the PE/COFF specification located at:
- *
- * http://www.microsoft.com/whdc/system/platform/firmware/PECOFF.mspx
- */
-
 #include <ph.h>
 #include <mapimg.h>
 
@@ -342,7 +335,6 @@ PIMAGE_SECTION_HEADER PhMappedImageRvaToSection(
     return NULL;
 }
 
-_Success_(return != NULL)
 PVOID PhMappedImageRvaToVa(
     _In_ PPH_MAPPED_IMAGE MappedImage,
     _In_ ULONG Rva,
@@ -365,7 +357,6 @@ PVOID PhMappedImageRvaToVa(
         ));
 }
 
-_Success_(return != NULL)
 PVOID PhMappedImageVaToVa(
     _In_ PPH_MAPPED_IMAGE MappedImage,
     _In_ ULONG Va,
@@ -2350,7 +2341,8 @@ NTSTATUS PhGetMappedImageProdIdHeader(
 
     if (richStartSignature == ProdIdTagStart && richEndSignature == ProdIdTagEnd)
     {
-        PPH_STRING hashString = NULL;
+        PPH_STRING hashRawContentString = NULL;
+        PPH_STRING hashContentString = NULL;
         ULONG currentCount = 0;
         PBYTE currentAddress;
         PBYTE currentEnd;
@@ -2369,7 +2361,7 @@ NTSTATUS PhGetMappedImageProdIdHeader(
 
             if (PhFinalHash(&hashContext, hash, 16, NULL))
             {
-                hashString = PhBufferToHexString(hash, 16);
+                hashRawContentString = PhBufferToHexString(hash, 16);
             }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
@@ -2377,9 +2369,62 @@ NTSTATUS PhGetMappedImageProdIdHeader(
             return GetExceptionCode();
         }
 
-        if (PhIsNullOrEmptyString(hashString))
+        if (PhIsNullOrEmptyString(hashRawContentString))
             return STATUS_FAIL_CHECK;
-        
+
+        // VT creates a different hash based on the decrypted header while other tools
+        // (including this one) create the hash based on the raw header. So create a second hash
+        // from the decrypted header so we can show and search both hashes (dmex)
+        {
+            PVOID richHeaderContentEnd;
+            ULONG richHeaderContentLength;
+            PULONG richHeaderContentBuffer;
+            PULONG richHeaderContentOffset;
+            PH_HASH_CONTEXT hashContext;
+            UCHAR hash[32];
+
+            // Recalculate the length needed for the hash since VT doesn't include the remaining entry.
+            richHeaderContentEnd = PTR_ADD_OFFSET(MappedImage->ViewBase, richHeaderEndOffset);
+            richHeaderContentLength = PtrToUlong(PTR_SUB_OFFSET(richHeaderContentEnd, richHeaderStart));
+
+            // We already probed above so this isn't really needed but probe again just to be sure.
+            __try
+            {
+                PhpMappedImageProbe(MappedImage, richHeaderStart, richHeaderContentLength);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return GetExceptionCode();
+            }
+
+            richHeaderContentBuffer = PhAllocateZero(richHeaderContentLength);
+            memcpy(richHeaderContentBuffer, richHeaderStart, richHeaderContentLength);
+
+            // Walk the buffer and decrypt the entire thing. Based on the same loop used by yara:
+            // https://github.com/VirusTotal/yara/blob/master/libyara/modules/pe/pe.c#L251-L259
+            for (
+                richHeaderContentOffset = richHeaderContentBuffer;
+                richHeaderContentOffset < (PULONG)PTR_ADD_OFFSET(richHeaderContentBuffer, richHeaderContentLength);
+                richHeaderContentOffset++
+                )
+            {
+                *richHeaderContentOffset ^= richHeaderKey;
+            }
+
+            PhInitializeHash(&hashContext, Md5HashAlgorithm);
+            PhUpdateHash(&hashContext, richHeaderContentBuffer, richHeaderContentLength);
+
+            if (PhFinalHash(&hashContext, hash, 16, NULL))
+            {
+                hashContentString = PhBufferToHexString(hash, 16);
+            }
+
+            PhFree(richHeaderContentBuffer);
+        }
+
+        if (PhIsNullOrEmptyString(hashContentString))
+            return STATUS_FAIL_CHECK;
+
         // Do a scan to determine how many entries there are.
         for (offset = currentAddress; offset < currentEnd; offset += sizeof(PRODITEM))
         {
@@ -2473,7 +2518,8 @@ NTSTATUS PhGetMappedImageProdIdHeader(
         //PhPrintPointer(ProdIdHeader->Key, UlongToPtr(richHeaderKey));
         ProdIdHeader->Valid = richHeaderKey == richHeaderValue;
         ProdIdHeader->Key = PhFormatString(L"%lx", richHeaderKey);
-        ProdIdHeader->Hash = hashString;
+        ProdIdHeader->RawHash = hashRawContentString;
+        ProdIdHeader->Hash = hashContentString;
         ProdIdHeader->NumberOfEntries = currentCount;
         ProdIdHeader->ProdIdEntries = PhFinalArrayItems(&richHeaderEntryArray);
 
