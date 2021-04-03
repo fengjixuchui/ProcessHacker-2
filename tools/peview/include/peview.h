@@ -72,6 +72,16 @@ NTSTATUS PhpOpenFileSecurity(
     _In_opt_ PVOID Context
     );
 
+DOUBLE PvCalculateEntropyBuffer(
+    _In_ PBYTE Buffer,
+    _In_ SIZE_T BufferLength
+    );
+
+PPH_STRING PvFormatDoubleCropZero(
+    _In_ DOUBLE Value,
+    _In_ USHORT Precision
+    );
+
 // libprp
 
 VOID PvLibProperties(
@@ -479,6 +489,13 @@ INT_PTR CALLBACK PvpPeProdIdDlgProc(
     );
 
 INT_PTR CALLBACK PvpPeExceptionDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
+INT_PTR CALLBACK PvpPeRelocationDlgProc(
     _In_ HWND hwndDlg,
     _In_ UINT uMsg,
     _In_ WPARAM wParam,

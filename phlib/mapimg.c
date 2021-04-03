@@ -343,6 +343,9 @@ PVOID PhMappedImageRvaToVa(
 {
     PIMAGE_SECTION_HEADER section;
 
+    if (Rva == 0)
+        return NULL;
+
     section = PhMappedImageRvaToSection(MappedImage, Rva);
 
     if (!section)
@@ -536,7 +539,7 @@ NTSTATUS PhLoadRemoteMappedImageEx(
     NTSTATUS status;
     IMAGE_DOS_HEADER dosHeader;
     ULONG ntHeadersOffset;
-    IMAGE_NT_HEADERS32 ntHeaders;
+    IMAGE_NT_HEADERS ntHeaders;
     SIZE_T ntHeadersSize;
 
     RemoteMappedImage->ViewBase = ViewBase;
@@ -568,7 +571,7 @@ NTSTATUS PhLoadRemoteMappedImageEx(
         ProcessHandle,
         PTR_ADD_OFFSET(ViewBase, ntHeadersOffset),
         &ntHeaders,
-        sizeof(IMAGE_NT_HEADERS32),
+        sizeof(IMAGE_NT_HEADERS),
         NULL
         );
 
@@ -647,7 +650,7 @@ BOOLEAN PhGetRemoteMappedImageDirectoryEntry(
     {
         PIMAGE_OPTIONAL_HEADER32 optionalHeader;
 
-        optionalHeader = (PIMAGE_OPTIONAL_HEADER32)&RemoteMappedImage->NtHeaders->OptionalHeader;
+        optionalHeader = (PIMAGE_OPTIONAL_HEADER32)&RemoteMappedImage->NtHeaders32->OptionalHeader;
 
         if (Index >= optionalHeader->NumberOfRvaAndSizes)
             return FALSE;
@@ -912,11 +915,10 @@ NTSTATUS PhGetMappedImageExports(
         NULL
         );
 
-    if (
-        !Exports->AddressTable ||
-        !Exports->NamePointerTable ||
-        !Exports->OrdinalTable
-        )
+    // Note: NamePointerTable and OrdinalTable are null for binaries
+    // such as mfc140u.dll yet contain valid exports (dmex)
+
+    if (!Exports->AddressTable)
         return STATUS_INVALID_PARAMETER;
 
     __try
@@ -926,16 +928,24 @@ NTSTATUS PhGetMappedImageExports(
             Exports->AddressTable,
             exportDirectory->NumberOfFunctions * sizeof(ULONG)
             );
-        PhpMappedImageProbe(
-            MappedImage,
-            Exports->NamePointerTable,
-            exportDirectory->NumberOfNames * sizeof(ULONG)
-            );
-        PhpMappedImageProbe(
-            MappedImage,
-            Exports->OrdinalTable,  // ordinal list for named exports
-            exportDirectory->NumberOfNames * sizeof(USHORT)
-            );
+
+        if (Exports->NamePointerTable)
+        {
+            PhpMappedImageProbe(
+                MappedImage,
+                Exports->NamePointerTable,
+                exportDirectory->NumberOfNames * sizeof(ULONG)
+                );
+        }
+
+        if (Exports->OrdinalTable)
+        {
+            PhpMappedImageProbe(
+                MappedImage,
+                Exports->OrdinalTable,  // ordinal list for named exports
+                exportDirectory->NumberOfNames * sizeof(USHORT)
+                );
+        }
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -966,17 +976,20 @@ NTSTATUS PhGetMappedImageExportEntry(
 
     Entry->Ordinal = (USHORT)Index + (USHORT)Exports->ExportDirectory->Base;
 
-    // look into named exports ordinal list.
-    for (nameIndex = 0; nameIndex < Exports->ExportDirectory->NumberOfNames; nameIndex++)
+    if (Exports->OrdinalTable)
     {
-        if (Index == Exports->OrdinalTable[nameIndex])
+        // look into named exports ordinal list.
+        for (nameIndex = 0; nameIndex < Exports->ExportDirectory->NumberOfNames; nameIndex++)
         {
-            exportByName = TRUE;
-            break;
+            if (Index == Exports->OrdinalTable[nameIndex])
+            {
+                exportByName = TRUE;
+                break;
+            }
         }
     }
 
-    if (exportByName)
+    if (Exports->NamePointerTable && exportByName)
     {
         name = PhMappedImageRvaToVa(
             Exports->MappedImage,
@@ -3046,11 +3059,9 @@ NTSTATUS PhGetMappedImageRelocations(
     while ((ULONG_PTR)relocationDirectory < (ULONG_PTR)relocationDirectoryEnd)
     {
         ULONG relocationCount;
-        PVOID relocationAddress;
         PIMAGE_BASE_RELOCATION_ENTRY relocations;
 
         relocationCount = (relocationDirectory->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(IMAGE_BASE_RELOCATION_ENTRY);
-        relocationAddress = PTR_ADD_OFFSET(MappedImage->ViewBase, relocationDirectory->VirtualAddress);
         relocations = PTR_ADD_OFFSET(relocationDirectory, RTL_SIZEOF_THROUGH_FIELD(IMAGE_BASE_RELOCATION, SizeOfBlock));
 
         for (ULONG i = 0; i < relocationCount; i++)
@@ -3060,8 +3071,20 @@ NTSTATUS PhGetMappedImageRelocations(
             entry.BlockIndex = relocationIndex;
             entry.Type = relocations[i].Type;
             entry.Offset = relocations[i].Offset;
-            entry.Value = PTR_ADD_OFFSET(relocationAddress, relocations[i].Offset);
             entry.BlockRva = relocationDirectory->VirtualAddress;
+            if (MappedImage->Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+            {
+                entry.ImageBaseVa = PTR_ADD_OFFSET(MappedImage->NtHeaders->OptionalHeader.ImageBase,
+                                                   (SIZE_T)entry.BlockRva + entry.Offset);
+            }
+            else if (MappedImage->Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+            {
+                entry.ImageBaseVa = PTR_ADD_OFFSET(MappedImage->NtHeaders32->OptionalHeader.ImageBase,
+                                                   (SIZE_T)entry.BlockRva + entry.Offset);
+            }
+            entry.MappedImageVa = PhMappedImageRvaToVa(MappedImage,
+                                                       entry.BlockRva + entry.Offset,
+                                                       NULL);
             PhAddItemArray(&relocationArray, &entry);
         }
 

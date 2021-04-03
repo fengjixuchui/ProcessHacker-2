@@ -73,6 +73,31 @@ VOID PvEnumerateExceptionEntries(
             }
 
             if (symbol) PhDereferenceObject(symbol);
+
+            if (entry)
+            {
+                PIMAGE_SECTION_HEADER directorySection;
+
+                directorySection = PhMappedImageRvaToSection(
+                    &PvMappedImage,
+                    entry
+                    );
+
+                if (directorySection)
+                {
+                    WCHAR sectionName[IMAGE_SIZEOF_SHORT_NAME + 1];
+
+                    if (PhGetMappedImageSectionName(
+                        directorySection,
+                        sectionName,
+                        RTL_NUMBER_OF(sectionName),
+                        NULL
+                        ))
+                    {
+                        PhSetListViewSubItem(ListViewHandle, lvItemIndex, 3, sectionName);
+                    }
+                }
+            }
         }
     }
     else if (imageMachine == IMAGE_FILE_MACHINE_AMD64)
@@ -90,10 +115,11 @@ VOID PvEnumerateExceptionEntries(
 
             PhPrintPointer(value, UlongToPtr(entry->BeginAddress));
             PhSetListViewSubItem(ListViewHandle, lvItemIndex, 1, value);
-
             PhPrintPointer(value, UlongToPtr(entry->EndAddress));
             PhSetListViewSubItem(ListViewHandle, lvItemIndex, 2, value);
-            PhSetListViewSubItem(ListViewHandle, lvItemIndex, 3, PhaFormatSize(entry->EndAddress - entry->BeginAddress, ULONG_MAX)->Buffer);
+            PhPrintPointer(value, UlongToPtr(entry->UnwindData)); // UnwindInfoAddress
+            PhSetListViewSubItem(ListViewHandle, lvItemIndex, 3, value);
+            PhSetListViewSubItem(ListViewHandle, lvItemIndex, 4, PhaFormatSize(entry->EndAddress - entry->BeginAddress, ULONG_MAX)->Buffer);
 
             symbol = PhGetSymbolFromAddress(
                 PvSymbolProvider,
@@ -106,11 +132,36 @@ VOID PvEnumerateExceptionEntries(
 
             if (symbolName)
             {
-                PhSetListViewSubItem(ListViewHandle, lvItemIndex, 4, symbolName->Buffer);
+                PhSetListViewSubItem(ListViewHandle, lvItemIndex, 5, symbolName->Buffer);
                 PhDereferenceObject(symbolName);
             }
 
             if (symbol) PhDereferenceObject(symbol);
+
+            if (entry->BeginAddress)
+            {
+                PIMAGE_SECTION_HEADER directorySection;
+
+                directorySection = PhMappedImageRvaToSection(
+                    &PvMappedImage,
+                    entry->BeginAddress
+                    );
+
+                if (directorySection)
+                {
+                    WCHAR sectionName[IMAGE_SIZEOF_SHORT_NAME + 1];
+
+                    if (PhGetMappedImageSectionName(
+                        directorySection,
+                        sectionName,
+                        RTL_NUMBER_OF(sectionName),
+                        NULL
+                        ))
+                    {
+                        PhSetListViewSubItem(ListViewHandle, lvItemIndex, 6, sectionName);
+                    }
+                }
+            }
         }
     }
 }
@@ -150,14 +201,17 @@ INT_PTR CALLBACK PvpPeExceptionDlgProc(
             {
                 PhAddListViewColumn(lvHandle, 1, 1, 1, LVCFMT_LEFT, 100, L"SEH Handler");
                 PhAddListViewColumn(lvHandle, 2, 2, 2, LVCFMT_LEFT, 200, L"Symbol");
+                PhAddListViewColumn(lvHandle, 3, 3, 3, LVCFMT_LEFT, 100, L"Section");
                 PhLoadListViewColumnsFromSetting(L"ImageExceptions32ListViewColumns", lvHandle);
             }
             else if (imageMachine == IMAGE_FILE_MACHINE_AMD64)
             {
                 PhAddListViewColumn(lvHandle, 1, 1, 1, LVCFMT_LEFT, 100, L"RVA (start)");
                 PhAddListViewColumn(lvHandle, 2, 2, 2, LVCFMT_LEFT, 100, L"RVA (end)");
-                PhAddListViewColumn(lvHandle, 3, 3, 3, LVCFMT_LEFT, 100, L"Size");
-                PhAddListViewColumn(lvHandle, 4, 4, 4, LVCFMT_LEFT, 200, L"Symbol");
+                PhAddListViewColumn(lvHandle, 3, 3, 3, LVCFMT_LEFT, 200, L"Data");
+                PhAddListViewColumn(lvHandle, 4, 4, 4, LVCFMT_LEFT, 100, L"Size");
+                PhAddListViewColumn(lvHandle, 5, 5, 5, LVCFMT_LEFT, 200, L"Symbol");
+                PhAddListViewColumn(lvHandle, 6, 6, 6, LVCFMT_LEFT, 100, L"Section");
                 PhLoadListViewColumnsFromSetting(L"ImageExceptions64ListViewColumns", lvHandle);
             }
 

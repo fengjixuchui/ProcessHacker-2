@@ -108,6 +108,7 @@
 #define IDD_RUNFILEDLG                  253
 #define IDD_LIVEDUMP                    254
 #define IDD_HEAPS                       255
+#define IDD_PROCVDMHOST                 257
 #define IDC_TERMINATE                   1003
 #define IDC_FILEICON                    1005
 #define IDC_FILE                        1006
@@ -590,6 +591,8 @@
 #define ID_MODULE_UNLOAD                40066
 #define ID_MODULE_PROPERTIES            40068
 #define ID_PROCESS_TERMINATETREE        40069
+#define ID_PROCESS_SUSPENDTREE          40070
+#define ID_PROCESS_RESUMETREE           40071
 #define ID_THREAD_INSPECT               40075
 #define ID_HACKER_RUN                   40076
 #define ID_HACKER_RUNASADMINISTRATOR    40077
@@ -726,6 +729,7 @@
 #define ID_DIGIT9                       40271
 #define ID_VIEW_HIDEWAITINGCONNECTIONS  40272
 #define ID_VIEW_HIDEDRIVERSERVICES      40273
+#define ID_VIEW_HIDEMICROSOFTSERVICES   40274
 #define ID_VIEW_SECTIONPLACEHOLDER      40274
 #define ID_VIEW_SCROLLTONEWPROCESSES    40275
 #define ID_TOOLS_STARTTASKMANAGER       40277

@@ -59,6 +59,7 @@ VOID PhAddDefaultSettings(
     PhpAddIntegerSetting(L"EnableTooltipSupport", L"1");
     PhpAddIntegerSetting(L"EnableSafeDefaultPlugins", L"1");
     PhpAddIntegerSetting(L"EnableSecurityAdvancedDialog", L"1");
+    PhpAddIntegerSetting(L"EnableShortRelativeStartTime", L"1");
     PhpAddIntegerSetting(L"EnableLinuxSubsystemSupport", L"0");
     PhpAddIntegerSetting(L"EnableVersionSupport", L"1");
     PhpAddStringSetting(L"EnvironmentTreeListColumns", L"");
@@ -83,6 +84,7 @@ VOID PhAddDefaultSettings(
     PhpAddStringSetting(L"HiddenProcessesListViewColumns", L"");
     PhpAddIntegerPairSetting(L"HiddenProcessesWindowPosition", L"400,400");
     PhpAddScalableIntegerPairSetting(L"HiddenProcessesWindowSize", L"@96|520,400");
+    PhpAddIntegerSetting(L"HideDefaultServices", L"0");
     PhpAddIntegerSetting(L"HideDriverServices", L"0");
     PhpAddIntegerSetting(L"HideFreeRegions", L"1");
     PhpAddIntegerSetting(L"HideOnClose", L"0");
@@ -92,6 +94,7 @@ VOID PhAddDefaultSettings(
     PhpAddIntegerSetting(L"HideWaitingConnections", L"0");
     PhpAddIntegerSetting(L"HighlightingDuration", L"3e8"); // 1000ms
     PhpAddStringSetting(L"IconGuids", L"");
+    PhpAddStringSetting(L"IconIgnoreBalloonClick", L"0");
     PhpAddStringSetting(L"IconSettings", L"1|1");
     PhpAddIntegerSetting(L"IconNotifyMask", L"c"); // PH_NOTIFY_SERVICE_CREATE | PH_NOTIFY_SERVICE_DELETE
     PhpAddIntegerSetting(L"IconProcesses", L"f"); // 15
@@ -206,9 +209,11 @@ VOID PhAddDefaultSettings(
     PhpAddIntegerSetting(L"TreeListCustomColorText", L"0");
     PhpAddIntegerSetting(L"TreeListCustomColorFocus", L"0");
     PhpAddIntegerSetting(L"TreeListCustomColorSelection", L"0");
+    PhpAddIntegerSetting(L"TreeListCustomRowSize", L"0");
     PhpAddIntegerSetting(L"UpdateInterval", L"3e8"); // 1000ms
     PhpAddIntegerSetting(L"WmiProviderEnableHiddenMenu", L"0");
     PhpAddStringSetting(L"WmiProviderListViewColumns", L"");
+    PhpAddStringSetting(L"VdmHostListViewColumns", L"");
 
     // Colors are specified with R in the lowest byte, then G, then B. So: bbggrr.
     PhpAddIntegerSetting(L"ColorNew", L"00ff7f"); // Chartreuse

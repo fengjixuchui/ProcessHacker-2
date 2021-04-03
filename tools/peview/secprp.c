@@ -2,7 +2,7 @@
  * Process Hacker -
  *   PE viewer
  *
- * Copyright (C) 2020 dmex
+ * Copyright (C) 2020-2021 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -149,11 +149,11 @@ static BOOLEAN WordMatchStringRef(
 
     while (remainingPart.Length)
     {
-        PhSplitStringRefAtChar(&remainingPart, '|', &part, &remainingPart);
+        PhSplitStringRefAtChar(&remainingPart, L'|', &part, &remainingPart);
 
         if (part.Length)
         {
-            if (PhFindStringInStringRef(Text, &part, TRUE) != -1)
+            if (PhFindStringInStringRef(Text, &part, TRUE) != SIZE_MAX)
                 return TRUE;
         }
     }
@@ -778,8 +778,11 @@ VOID PvGetSelectedCertificateNodes(
         }
     }
 
-    *Windows = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
-    *NumberOfWindows = list->Count;
+    if (list->Count)
+    {
+        *Windows = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
+        *NumberOfWindows = list->Count;
+    }
 
     PhDereferenceObject(list);
 }
@@ -1626,32 +1629,6 @@ INT_PTR CALLBACK PvpPeSecurityDlgProc(
                     PhFree(nodes);
                 }
                 break;
-            case IDC_GOTO:
-                {
-                    RECT rect;
-                    PPH_EMENU menu;
-                    PPH_EMENU_ITEM selectedItem;
-
-                    GetWindowRect(GetDlgItem(hwndDlg, IDC_GOTO), &rect);
-
-                    menu = PhCreateEMenu();
-                    selectedItem = PhShowEMenu(
-                        menu,
-                        hwndDlg,
-                        PH_EMENU_SHOW_LEFTRIGHT,
-                        PH_ALIGN_LEFT | PH_ALIGN_TOP,
-                        rect.left,
-                        rect.bottom
-                        );
-
-                    if (selectedItem && selectedItem->Id)
-                    {
-
-                    }
-
-                    PhDestroyEMenu(menu);
-                }
-                break;
             case IDC_RESET:
                 {
                     PvClearCertificateTree(context);
@@ -1671,7 +1648,7 @@ INT_PTR CALLBACK PvpPeSecurityDlgProc(
              switch (pageNotify->hdr.code)
              {
              case PSN_QUERYINITIALFOCUS:
-                 SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (LPARAM)GetDlgItem(hwndDlg, IDC_GOTO));
+                 SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (LPARAM)context->TreeNewHandle);
                  return TRUE;
              }
          }

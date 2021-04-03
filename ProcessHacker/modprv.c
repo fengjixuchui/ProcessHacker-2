@@ -42,6 +42,7 @@ typedef struct _PH_MODULE_QUERY_DATA
     VERIFY_RESULT VerifyResult;
     PPH_STRING VerifySignerName;
     ULONG ImageFlags;
+    ULONG GuardFlags;
 
     NTSTATUS ImageCoherencyStatus;
     FLOAT ImageCoherency;
@@ -268,6 +269,7 @@ VOID PhpModuleItemDeleteProcedure(
 
     if (moduleItem->Name) PhDereferenceObject(moduleItem->Name);
     if (moduleItem->FileName) PhDereferenceObject(moduleItem->FileName);
+    if (moduleItem->OriginalFileName) PhDereferenceObject(moduleItem->OriginalFileName);
     if (moduleItem->VerifySignerName) PhDereferenceObject(moduleItem->VerifySignerName);
     PhDeleteImageVersionInfo(&moduleItem->VersionInfo);
 }
@@ -374,6 +376,8 @@ NTSTATUS PhpModuleQueryWorker(
         // This is needed to detect standard .NET images loaded by .NET core, Mono and other CLR runtimes.
         if (NT_SUCCESS(PhLoadMappedImageEx(PhGetString(data->ModuleItem->FileName), NULL, &mappedImage)))
         {
+            PH_MAPPED_IMAGE_CFG cfgConfig = { 0 };
+
             if (mappedImage.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC && mappedImage.NtHeaders32)
             {
                 PIMAGE_OPTIONAL_HEADER32 optionalHeader = &mappedImage.NtHeaders32->OptionalHeader;
@@ -400,6 +404,10 @@ NTSTATUS PhpModuleQueryWorker(
                 }
             }
 #endif
+            if (NT_SUCCESS(PhGetMappedImageCfg(&cfgConfig, &mappedImage)))
+            {
+                data->GuardFlags = cfgConfig.GuardFlags;
+            }
 
             PhUnloadMappedImage(&mappedImage);
         }
@@ -474,6 +482,7 @@ static BOOLEAN NTAPI EnumModulesCallback(
     copy = PhAllocateCopy(Module, sizeof(PH_MODULE_INFO));
     PhReferenceObject(copy->Name);
     PhReferenceObject(copy->FileName);
+    PhReferenceObject(copy->OriginalFileName);
 
     PhAddItemList((PPH_LIST)Context, copy);
 
@@ -571,6 +580,7 @@ VOID PhModuleProviderUpdate(
             data->ModuleItem->VerifyResult = data->VerifyResult;
             data->ModuleItem->VerifySignerName = data->VerifySignerName;
             data->ModuleItem->Flags |= data->ImageFlags;
+            data->ModuleItem->GuardFlags = data->GuardFlags;
             data->ModuleItem->ImageCoherencyStatus = data->ImageCoherencyStatus;
             data->ModuleItem->ImageCoherency = data->ImageCoherency;
 
@@ -595,6 +605,7 @@ VOID PhModuleProviderUpdate(
 
             PhReferenceObject(module->Name);
             PhReferenceObject(module->FileName);
+            PhReferenceObject(module->OriginalFileName);
 
             moduleItem = PhCreateModuleItem();
             moduleItem->BaseAddress = module->BaseAddress;
@@ -607,6 +618,7 @@ VOID PhModuleProviderUpdate(
             moduleItem->LoadTime = module->LoadTime;
             moduleItem->Name = module->Name;
             moduleItem->FileName = module->FileName;
+            moduleItem->OriginalFileName = module->OriginalFileName;
             moduleItem->ParentBaseAddress = module->ParentBaseAddress;
 
             PhInitializeImageVersionInfo(&moduleItem->VersionInfo, moduleItem->FileName->Buffer);
@@ -721,15 +733,16 @@ VOID PhModuleProviderUpdate(
                         PhFree(debugEntry);
                     }
 
-                    if (!PhGetRemoteMappedImageGuardFlagsEx(
-                        moduleProvider->ProcessHandle,
-                        &remoteMappedImage,
-                        readVirtualMemoryCallback,
-                        &moduleItem->GuardFlags
-                        ))
-                    {
-                        moduleItem->GuardFlags = 0;
-                    }
+                    // GuardFlags moved to PhpModuleQueryWorker (dmex)
+                    //if (!PhGetRemoteMappedImageGuardFlagsEx(
+                    //    moduleProvider->ProcessHandle,
+                    //    &remoteMappedImage,
+                    //    readVirtualMemoryCallback,
+                    //    &moduleItem->GuardFlags
+                    //    ))
+                    //{
+                    //    moduleItem->GuardFlags = 0;
+                    //}
 
                     PhUnloadRemoteMappedImage(&remoteMappedImage);
                 }

@@ -147,6 +147,15 @@ INT_PTR CALLBACK PhpProcessWmiProvidersDlgProc(
     _In_ LPARAM lParam
     );
 
+#ifdef _M_IX86
+INT_PTR CALLBACK PhpProcessVdmHostProcessDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+#endif
+
 extern PH_STRINGREF PhpLoadingText;
 
 #define WM_PH_THREADS_UPDATED (WM_APP + 200)
@@ -318,6 +327,12 @@ typedef struct _PH_STATISTICS_CONTEXT
     PPH_STRING GdiHandles;
     PPH_STRING UserHandles;
     PSYSTEM_PROCESS_INFORMATION_EXTENSION ProcessExtension;
+
+    PPH_STRING SharedCommitUsage;
+    PPH_STRING PrivateCommitUsage;
+    PPH_STRING PeakPrivateCommitUsage;
+    //PPH_STRING PrivateCommitLimit;
+    //PPH_STRING TotalCommitLimit;
 } PH_STATISTICS_CONTEXT, *PPH_STATISTICS_CONTEXT;
 
 #define WM_PH_PERFORMANCE_UPDATE (WM_APP + 241)

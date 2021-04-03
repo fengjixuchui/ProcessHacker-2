@@ -1790,7 +1790,7 @@ BOOLEAN PhGetFileVersionInfoKey(
 
     while ((ULONG_PTR)child < (ULONG_PTR)VersionInfo + VersionInfo->Length)
     {
-        if (_wcsnicmp(child->Key, Key, KeyLength) == 0 && !child->Key[KeyLength])
+        if (_wcsnicmp(child->Key, Key, KeyLength) == 0 && child->Key[KeyLength] == UNICODE_NULL)
         {
             if (Buffer)
                 *Buffer = child;
@@ -6734,7 +6734,7 @@ PVOID PhGetLoaderEntryImageExportFunction(
             libraryNameString = PhCreateStringEx(dllNameRef.Buffer, dllNameRef.Length);
             libraryFunctionString = PhConvertUtf16ToUtf8Ex(dllProcedureRef.Buffer, dllProcedureRef.Length);
 
-            if (libraryModule = LoadLibrary(libraryNameString->Buffer))
+            if (libraryModule = PhLoadLibrarySafe(libraryNameString->Buffer))
             {
                 if (libraryFunctionString->Buffer[0] == L'#') // This is a forwarder RVA with an ordinal import.
                 {
@@ -6827,7 +6827,7 @@ PVOID PhGetDllBaseProcedureAddressWithHint(
                     libraryNameString = PhCreateStringEx(dllNameRef.Buffer, dllNameRef.Length);
                     libraryFunctionString = PhConvertUtf16ToUtf8Ex(dllProcedureRef.Buffer, dllProcedureRef.Length);
 
-                    if (libraryModule = LoadLibrary(libraryNameString->Buffer))
+                    if (libraryModule = PhLoadLibrarySafe(libraryNameString->Buffer))
                     {
                         if (libraryFunctionString->Buffer[0] == L'#') // This is a forwarder RVA with an ordinal import.
                         {
@@ -6930,7 +6930,7 @@ static NTSTATUS PhpFixupLoaderEntryImageImports(
 
             if (!(importBaseAddress = PhGetLoaderEntryDllBase(importNameSr->Buffer)))
             {
-                if (importBaseAddress = LoadLibrary(importNameSr->Buffer))
+                if (importBaseAddress = PhLoadLibrarySafe(importNameSr->Buffer))
                     status = STATUS_SUCCESS;
                 else
                     status = PhGetLastWin32ErrorAsNtStatus();
@@ -7128,7 +7128,7 @@ static NTSTATUS PhpFixupLoaderEntryImageDelayImports(
 
                 if (!(importBaseAddress = PhGetLoaderEntryDllBase(importNameSr->Buffer)))
                 {
-                    if (importBaseAddress = LoadLibrary(importNameSr->Buffer))
+                    if (importBaseAddress = PhLoadLibrarySafe(importNameSr->Buffer))
                     {
                         importNeedsFree = TRUE;
                         status = STATUS_SUCCESS;
@@ -7240,6 +7240,137 @@ NTSTATUS PhpLoaderEntryQuerySectionInformation(
     return status;
 }
 
+NTSTATUS PhLoaderEntryRelocateImage(
+    _In_ PVOID BaseAddress)
+{
+    NTSTATUS status;
+    PIMAGE_NT_HEADERS imageNtHeader;
+    PIMAGE_DATA_DIRECTORY dataDirectory;
+    PIMAGE_BASE_RELOCATION relocationDirectory;
+    PVOID relocationDirectoryEnd;
+    ULONG_PTR relocationDelta;
+
+    status = PhGetLoaderEntryImageNtHeaders(
+        BaseAddress,
+        &imageNtHeader
+        );
+
+    if (!NT_SUCCESS(status))
+        return status;
+
+    status = PhGetLoaderEntryImageDirectory(
+        BaseAddress,
+        imageNtHeader,
+        IMAGE_DIRECTORY_ENTRY_BASERELOC,
+        &dataDirectory,
+        &relocationDirectory,
+        NULL
+        );
+
+    if (!NT_SUCCESS(status))
+        return status;
+
+    if (dataDirectory->Size == 0)
+        return STATUS_SUCCESS;
+    if (imageNtHeader->FileHeader.Characteristics & IMAGE_FILE_RELOCS_STRIPPED)
+        return STATUS_SUCCESS;
+
+    for (ULONG i = 0; i < imageNtHeader->FileHeader.NumberOfSections; i++)
+    {
+        PIMAGE_SECTION_HEADER sectionHeader;
+        PVOID sectionHeaderAddress;
+        SIZE_T sectionHeaderSize;
+        ULONG sectionProtectionJunk = 0;
+
+        sectionHeader = PTR_ADD_OFFSET(IMAGE_FIRST_SECTION(imageNtHeader), sizeof(IMAGE_SECTION_HEADER) * i);
+        sectionHeaderAddress = PTR_ADD_OFFSET(BaseAddress, sectionHeader->VirtualAddress);
+        sectionHeaderSize = sectionHeader->SizeOfRawData;
+
+        status = NtProtectVirtualMemory(
+            NtCurrentProcess(),
+            &sectionHeaderAddress,
+            &sectionHeaderSize,
+            PAGE_READWRITE,
+            &sectionProtectionJunk
+            );
+
+        if (!NT_SUCCESS(status))
+            break;
+    }
+
+    if (!NT_SUCCESS(status))
+        return status;
+
+    relocationDirectoryEnd = PTR_ADD_OFFSET(relocationDirectory, dataDirectory->Size);
+    relocationDelta = (ULONG_PTR)PTR_SUB_OFFSET(imageNtHeader->OptionalHeader.ImageBase, BaseAddress);
+
+    while ((ULONG_PTR)relocationDirectory < (ULONG_PTR)relocationDirectoryEnd)
+    {
+        ULONG relocationCount;
+        PVOID relocationAddress;
+        PIMAGE_BASE_RELOCATION_ENTRY relocations;
+
+        relocationCount = (relocationDirectory->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(IMAGE_BASE_RELOCATION_ENTRY);
+        relocationAddress = PTR_ADD_OFFSET(BaseAddress, relocationDirectory->VirtualAddress);
+        relocations = PTR_ADD_OFFSET(relocationDirectory, RTL_SIZEOF_THROUGH_FIELD(IMAGE_BASE_RELOCATION, SizeOfBlock));
+
+        for (ULONG i = 0; i < relocationCount; i++)
+        {
+            switch (relocations[i].Type)
+            {
+            case IMAGE_REL_BASED_LOW:
+                *(PUSHORT)PTR_ADD_OFFSET(relocationAddress, relocations[i].Offset) += (USHORT)relocationDelta;
+                break;
+            case IMAGE_REL_BASED_HIGHLOW:
+                *(PULONG)PTR_ADD_OFFSET(relocationAddress, relocations[i].Offset) += (ULONG)relocationDelta;
+                break;
+            case IMAGE_REL_BASED_DIR64:
+                *(PULONGLONG)PTR_ADD_OFFSET(relocationAddress, relocations[i].Offset) += (ULONGLONG)relocationDelta;
+                break;
+            }
+        }
+
+        relocationDirectory = PTR_ADD_OFFSET(relocationDirectory, relocationDirectory->SizeOfBlock);
+    }
+
+    for (ULONG i = 0; i < imageNtHeader->FileHeader.NumberOfSections; i++)
+    {
+        PIMAGE_SECTION_HEADER sectionHeader;
+        PVOID sectionHeaderAddress;
+        SIZE_T sectionHeaderSize;
+        ULONG sectionProtection = 0;
+        ULONG sectionProtectionJunk = 0;
+
+        sectionHeader = PTR_ADD_OFFSET(IMAGE_FIRST_SECTION(imageNtHeader), sizeof(IMAGE_SECTION_HEADER) * i);
+        sectionHeaderAddress = PTR_ADD_OFFSET(BaseAddress, sectionHeader->VirtualAddress);
+        sectionHeaderSize = sectionHeader->SizeOfRawData;
+
+        if (sectionHeader->Characteristics & IMAGE_SCN_MEM_READ)
+            sectionProtection = PAGE_READONLY;
+        if (sectionHeader->Characteristics & IMAGE_SCN_MEM_WRITE)
+            sectionProtection = PAGE_WRITECOPY;
+        if (sectionHeader->Characteristics & IMAGE_SCN_MEM_EXECUTE)
+            sectionProtection = PAGE_EXECUTE;
+        if (sectionHeader->Characteristics & IMAGE_SCN_MEM_READ && sectionHeader->Characteristics & IMAGE_SCN_MEM_EXECUTE)
+            sectionProtection = PAGE_EXECUTE_READ;
+        if (sectionHeader->Characteristics & IMAGE_SCN_MEM_WRITE && sectionHeader->Characteristics & IMAGE_SCN_MEM_EXECUTE)
+            sectionProtection = PAGE_EXECUTE_READWRITE;
+
+        status = NtProtectVirtualMemory(
+            NtCurrentProcess(),
+            &sectionHeaderAddress,
+            &sectionHeaderSize,
+            sectionProtection,
+            &sectionProtectionJunk
+            );
+
+        if (!NT_SUCCESS(status))
+            break;
+    }
+
+    return status;
+}
+
 NTSTATUS PhLoaderEntryLoadDll(
     _In_ PWSTR FileName,
     _Out_ PVOID* BaseAddress
@@ -7309,10 +7440,24 @@ NTSTATUS PhLoaderEntryLoadDll(
 
     if (NT_SUCCESS(status))
     {
+        status = PhLoaderEntryRelocateImage(
+            imageBaseAddress
+            );
+    }
+
+    if (NT_SUCCESS(status))
+    {
         if (BaseAddress)
         {
             *BaseAddress = imageBaseAddress;
         }
+    }
+    else
+    {
+        NtUnmapViewOfSection(
+            NtCurrentProcess(),
+            imageBaseAddress
+            );
     }
 
     return status;
@@ -7633,7 +7778,7 @@ HRESULT PhGetClassObjectDllBase(
     _Out_ PVOID* Ppv
     )
 {
-    HRESULT (WINAPI* DllGetClassObject_I)(_In_ REFCLSID rclsid, _In_ REFIID riid, _COM_Outptr_ PVOID * ppv);
+    HRESULT (WINAPI* DllGetClassObject_I)(_In_ REFCLSID rclsid, _In_ REFIID riid, _COM_Outptr_ PVOID* ppv);
     HRESULT status;
     IClassFactory* classFactory;
 
@@ -7672,9 +7817,47 @@ HRESULT PhGetClassObject(
 
     if (!(baseAddress = PhGetLoaderEntryDllBase(DllName)))
     {
-        if (!(baseAddress = LoadLibrary(DllName)))
+        if (!(baseAddress = PhLoadLibrarySafe(DllName)))
             return HRESULT_FROM_WIN32(ERROR_MOD_NOT_FOUND);
     }
 
     return PhGetClassObjectDllBase(baseAddress, Rclsid, Riid, Ppv);
+}
+
+/*!
+    @brief PhLoadLibrarySafe prevents the loader from searching in an unsafe
+     order by first requiring the loader try to load and resolve through
+     System32. Then upping the loading flags until the library is loaded.
+
+    @param[in] LibFileName - The file name of the library to load.
+
+    @return HMODULE to the library on success, null on failure.
+*/
+_Ret_maybenull_
+PVOID
+PhLoadLibrarySafe(
+    _In_ PCWSTR LibFileName
+    )
+{
+    PVOID baseAddress;
+
+    //
+    // Force LOAD_LIBRARY_SEARCH_SYSTEM32. If the library file name is a fully
+    // qualified path this will succeed.
+    //
+    baseAddress = LoadLibraryExW(LibFileName,
+                                 NULL,
+                                 LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (baseAddress)
+    {
+        return baseAddress;
+    }
+
+    //
+    // Include the application directory now.
+    //
+    return LoadLibraryExW(LibFileName,
+                          NULL,
+                          LOAD_LIBRARY_SEARCH_SYSTEM32 |
+                          LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
 }
