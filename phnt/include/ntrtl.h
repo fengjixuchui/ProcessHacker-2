@@ -3216,7 +3216,7 @@ RtlImageRvaToVa(
     _In_ PIMAGE_NT_HEADERS NtHeaders,
     _In_ PVOID BaseOfImage,
     _In_ ULONG Rva,
-    _Inout_opt_ PIMAGE_SECTION_HEADER *LastRvaSection
+    _Out_opt_ PIMAGE_SECTION_HEADER *LastRvaSection
     );
 
 #if (PHNT_VERSION >= PHNT_THRESHOLD)
@@ -4773,6 +4773,19 @@ RtlFormatMessageEx(
     _In_ ULONG Length,
     _Out_opt_ PULONG ReturnLength,
     _Out_opt_ PPARSE_MESSAGE_CONTEXT ParseContext
+    );
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlGetFileMUIPath(
+    _In_ ULONG Flags,
+    _In_ PCWSTR FilePath,
+    _Inout_opt_ PWSTR Language,
+    _Inout_ PULONG LanguageLength,
+    _Out_opt_ PWSTR FileMUIPath,
+    _Inout_ PULONG FileMUIPathLength,
+    _Inout_ PULONGLONG Enumerator
     );
 
 // Errors

@@ -5433,25 +5433,57 @@ NTSTATUS PhEnumHandlesEx(
     NTSTATUS status;
     PVOID buffer;
     ULONG bufferSize;
+    ULONG returnLength = 0;
+    ULONG attempts = 0;
 
     bufferSize = initialBufferSize;
     buffer = PhAllocate(bufferSize);
 
-    while ((status = NtQuerySystemInformation(
+    status = NtQuerySystemInformation(
         SystemExtendedHandleInformation,
         buffer,
         bufferSize,
-        NULL
-        )) == STATUS_INFO_LENGTH_MISMATCH)
+        &returnLength
+        );
+
+    while (status == STATUS_INFO_LENGTH_MISMATCH && attempts < 10)
     {
         PhFree(buffer);
-        bufferSize *= 2;
-
-        // Fail if we're resizing the buffer to something very large.
-        if (bufferSize > PH_LARGE_BUFFER_SIZE)
-            return STATUS_INSUFFICIENT_RESOURCES;
-
+        bufferSize = returnLength;
         buffer = PhAllocate(bufferSize);
+
+        status = NtQuerySystemInformation(
+            SystemExtendedHandleInformation,
+            buffer,
+            bufferSize,
+            &returnLength
+            );
+
+        attempts++;
+    }
+
+    if (!NT_SUCCESS(status))
+    {
+        // Fall back to using the previous code that we've used since Windows XP (dmex)
+        bufferSize = initialBufferSize;
+        buffer = PhAllocate(bufferSize);
+
+        while ((status = NtQuerySystemInformation(
+            SystemExtendedHandleInformation,
+            buffer,
+            bufferSize,
+            NULL
+            )) == STATUS_INFO_LENGTH_MISMATCH)
+        {
+            PhFree(buffer);
+            bufferSize *= 2;
+
+            // Fail if we're resizing the buffer to something very large.
+            if (bufferSize > PH_LARGE_BUFFER_SIZE)
+                return STATUS_INSUFFICIENT_RESOURCES;
+
+            buffer = PhAllocate(bufferSize);
+        }
     }
 
     if (!NT_SUCCESS(status))
@@ -6961,8 +6993,8 @@ static BOOLEAN EnumGenericProcessModulesCallback(
     moduleInfo.LoadCount = Module->ObsoleteLoadCount;
 
     moduleInfo.Name = PhCreateStringFromUnicodeString(&Module->BaseDllName);
-    moduleInfo.OriginalFileName = PhCreateStringFromUnicodeString(&Module->FullDllName);
-    moduleInfo.FileName = PhGetFileName(moduleInfo.OriginalFileName);
+    moduleInfo.FileName = PhCreateStringFromUnicodeString(&Module->FullDllName);
+    moduleInfo.FileNameWin32 = PhGetFileName(moduleInfo.FileName);
 
     if (WindowsVersion >= WINDOWS_8)
     {
@@ -6980,8 +7012,8 @@ static BOOLEAN EnumGenericProcessModulesCallback(
     cont = context->Callback(&moduleInfo, context->Context);
 
     PhDereferenceObject(moduleInfo.Name);
+    PhDereferenceObject(moduleInfo.FileNameWin32);
     PhDereferenceObject(moduleInfo.FileName);
-    PhDereferenceObject(moduleInfo.OriginalFileName);
 
     return cont;
 }
@@ -7026,8 +7058,8 @@ VOID PhpRtlModulesToGenericModules(
         moduleInfo.EntryPoint = NULL;
         moduleInfo.Flags = module->Flags;
         moduleInfo.Name = PhConvertMultiByteToUtf16(&module->FullPathName[module->OffsetToFileName]);
-        moduleInfo.FileName = PhGetFileName(fileName); // convert to DOS file name
-        moduleInfo.OriginalFileName = fileName;
+        moduleInfo.FileNameWin32 = PhGetFileName(fileName); // convert to DOS file name
+        moduleInfo.FileName = fileName;
         moduleInfo.LoadOrderIndex = module->LoadOrderIndex;
         moduleInfo.LoadCount = module->LoadCount;
         moduleInfo.LoadReason = USHRT_MAX;
@@ -7044,14 +7076,14 @@ VOID PhpRtlModulesToGenericModules(
             // directory.
             PhGetSystemRoot(&systemRoot);
             newFileName = PhConcatStringRef3(&systemRoot, &driversString, &moduleInfo.Name->sr);
-            PhMoveReference(&moduleInfo.FileName, newFileName);
+            PhMoveReference(&moduleInfo.FileNameWin32, newFileName);
         }
 
         cont = Callback(&moduleInfo, Context);
 
         PhDereferenceObject(moduleInfo.Name);
+        PhDereferenceObject(moduleInfo.FileNameWin32);
         PhDereferenceObject(moduleInfo.FileName);
-        PhDereferenceObject(moduleInfo.OriginalFileName);
 
         if (!cont)
             break;
@@ -7097,8 +7129,8 @@ VOID PhpRtlModulesExToGenericModules(
         moduleInfo.EntryPoint = NULL;
         moduleInfo.Flags = module->BaseInfo.Flags;
         moduleInfo.Name = PhConvertMultiByteToUtf16(&module->BaseInfo.FullPathName[module->BaseInfo.OffsetToFileName]);
-        moduleInfo.FileName = PhGetFileName(fileName); // convert to DOS file name
-        moduleInfo.OriginalFileName = fileName;
+        moduleInfo.FileNameWin32 = PhGetFileName(fileName); // convert to DOS file name
+        moduleInfo.FileName = fileName;
         moduleInfo.LoadOrderIndex = module->BaseInfo.LoadOrderIndex;
         moduleInfo.LoadCount = module->BaseInfo.LoadCount;
         moduleInfo.LoadReason = USHRT_MAX;
@@ -7108,8 +7140,8 @@ VOID PhpRtlModulesExToGenericModules(
         cont = Callback(&moduleInfo, Context);
 
         PhDereferenceObject(moduleInfo.Name);
+        PhDereferenceObject(moduleInfo.FileNameWin32);
         PhDereferenceObject(moduleInfo.FileName);
-        PhDereferenceObject(moduleInfo.OriginalFileName);
 
         if (!cont)
             break;
@@ -7136,9 +7168,9 @@ BOOLEAN PhpCallbackMappedFileOrImage(
     moduleInfo.Size = (ULONG)AllocationSize;
     moduleInfo.EntryPoint = NULL;
     moduleInfo.Flags = 0;
-    moduleInfo.FileName = PhGetFileName(FileName);
-    moduleInfo.OriginalFileName = FileName;
-    moduleInfo.Name = PhGetBaseName(moduleInfo.FileName);
+    moduleInfo.FileNameWin32 = PhGetFileName(FileName);
+    moduleInfo.FileName = FileName;
+    moduleInfo.Name = PhGetBaseName(moduleInfo.FileNameWin32);
     moduleInfo.LoadOrderIndex = USHRT_MAX;
     moduleInfo.LoadCount = USHRT_MAX;
     moduleInfo.LoadReason = USHRT_MAX;
@@ -7147,8 +7179,8 @@ BOOLEAN PhpCallbackMappedFileOrImage(
 
     cont = Callback(&moduleInfo, Context);
 
+    PhDereferenceObject(moduleInfo.FileNameWin32);
     PhDereferenceObject(moduleInfo.FileName);
-    PhDereferenceObject(moduleInfo.OriginalFileName);
     PhDereferenceObject(moduleInfo.Name);
 
     return cont;
@@ -8207,9 +8239,9 @@ NTSTATUS PhCreateFileWin32Ex(
 
 NTSTATUS PhCreateFile(
     _Out_ PHANDLE FileHandle,
-    _In_ PWSTR FileName,
+    _In_ PPH_STRING FileName,
     _In_ ACCESS_MASK DesiredAccess,
-    _In_opt_ ULONG FileAttributes,
+    _In_ ULONG FileAttributes,
     _In_ ULONG ShareAccess,
     _In_ ULONG CreateDisposition,
     _In_ ULONG CreateOptions
@@ -8221,7 +8253,9 @@ NTSTATUS PhCreateFile(
     OBJECT_ATTRIBUTES objectAttributes;
     IO_STATUS_BLOCK isb;
 
-    RtlInitUnicodeString(&fileName, FileName);
+    if (!PhStringRefToUnicodeString(&FileName->sr, &fileName))
+        return STATUS_NAME_TOO_LONG;
+
     InitializeObjectAttributes(
         &objectAttributes,
         &fileName,
@@ -8439,6 +8473,28 @@ NTSTATUS PhQueryFullAttributesFileWin32(
     return status;
 }
 
+NTSTATUS PhQueryFullAttributesFile(
+    _In_ PPH_STRING FileName,
+    _Out_ PFILE_NETWORK_OPEN_INFORMATION FileInformation
+    )
+{
+    UNICODE_STRING fileName;
+    OBJECT_ATTRIBUTES objectAttributes;
+
+    if (!PhStringRefToUnicodeString(&FileName->sr, &fileName))
+        return STATUS_NAME_TOO_LONG;
+
+    InitializeObjectAttributes(
+        &objectAttributes,
+        &fileName,
+        OBJ_CASE_INSENSITIVE,
+        NULL,
+        NULL
+        );
+
+    return NtQueryFullAttributesFile(&objectAttributes, FileInformation);
+}
+
 NTSTATUS PhQueryAttributesFileWin32(
     _In_ PWSTR FileName,
     _Out_ PFILE_BASIC_INFORMATION FileInformation
@@ -8477,14 +8533,16 @@ NTSTATUS PhQueryAttributesFileWin32(
 }
 
 NTSTATUS PhQueryAttributesFile(
-    _In_ PWSTR FileName,
+    _In_ PPH_STRING FileName,
     _Out_ PFILE_BASIC_INFORMATION FileInformation
     )
 {
     UNICODE_STRING fileName;
     OBJECT_ATTRIBUTES objectAttributes;
 
-    RtlInitUnicodeString(&fileName, FileName);
+    if (!PhStringRefToUnicodeString(&FileName->sr, &fileName))
+        return STATUS_NAME_TOO_LONG;
+
     InitializeObjectAttributes(
         &objectAttributes,
         &fileName,
@@ -8519,7 +8577,7 @@ BOOLEAN PhDoesFileExistsWin32(
 }
 
 BOOLEAN PhDoesFileExists(
-    _In_ PWSTR FileName
+    _In_ PPH_STRING FileName
     )
 {
     NTSTATUS status;

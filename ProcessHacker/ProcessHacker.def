@@ -238,6 +238,7 @@ EXPORTS
     PhConnectPipe
     PhDeleteDirectory
     PhDeleteFileWin32
+    PhDeleteValueKey
     PhDetermineDosPathNameType
     PhDoesFileExistsWin32
     PhDoesFileExists
@@ -402,6 +403,7 @@ EXPORTS
     PhParseCommandLinePart
     PhQueryRegistryString
     PhQueryRegistryUlong
+    PhQueryRegistryUlongEx
     PhQueryRegistryUlong64
     PhReferenceObjects
     PhSetFileDialogFileName

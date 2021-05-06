@@ -3,7 +3,7 @@
  *   hidden processes detection
  *
  * Copyright (C) 2010-2013 wj32
- * Copyright (C) 2019-2020 dmex
+ * Copyright (C) 2019-2021 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -51,6 +51,7 @@
 #include <mainwnd.h>
 #include <procprv.h>
 #include <settings.h>
+#include <phsettings.h>
 
 INT_PTR CALLBACK PhpHiddenProcessesDlgProc(
     _In_ HWND hwndDlg,
@@ -642,14 +643,14 @@ static PPH_PROCESS_ITEM PhpCreateProcessItemForHiddenProcess(
     if (processItem->FileName)
     {
         // Small icon, large icon.
-        if (processItem->IconEntry = PhImageListExtractIcon(processItem->FileName))
+        if (processItem->IconEntry = PhImageListExtractIcon(processItem->FileName, TRUE))
         {
             processItem->SmallIconIndex = processItem->IconEntry->SmallIconIndex;
             processItem->LargeIconIndex = processItem->IconEntry->LargeIconIndex;
         }
 
         // Version info.
-        PhInitializeImageVersionInfo(&processItem->VersionInfo, processItem->FileName->Buffer);
+        PhInitializeImageVersionInfoEx(&processItem->VersionInfo, processItem->FileName, PhEnableVersionShortText);
     }
 
     // Command line
@@ -672,7 +673,7 @@ static PPH_PROCESS_ITEM PhpCreateProcessItemForHiddenProcess(
             // spaces.
             for (i = 0; i < (ULONG)commandLine->Length / sizeof(WCHAR); i++)
             {
-                if (commandLine->Buffer[i] == 0)
+                if (commandLine->Buffer[i] == UNICODE_NULL)
                     commandLine->Buffer[i] = ' ';
             }
         }

@@ -113,6 +113,7 @@ VOID PhInitializeThreadList(
     PhAddTreeNewColumn(TreeNewHandle, PH_THREAD_TREELIST_COLUMN_TIDHEX, FALSE, L"TID (Hex)", 50, PH_ALIGN_RIGHT, ULONG_MAX, DT_RIGHT);
     PhAddTreeNewColumn(TreeNewHandle, PH_THREAD_TREELIST_COLUMN_CPUCORECYCLES, FALSE, L"CPU (relative)", 50, PH_ALIGN_RIGHT, ULONG_MAX, DT_RIGHT);
     PhAddTreeNewColumn(TreeNewHandle, PH_THREAD_TREELIST_COLUMN_TOKEN_STATE, FALSE, L"Token", 50, PH_ALIGN_LEFT, ULONG_MAX, 0);
+    PhAddTreeNewColumn(TreeNewHandle, PH_THREAD_TREELIST_COLUMN_PENDINGIRP, FALSE, L"Pending IRP", 50, PH_ALIGN_LEFT, ULONG_MAX, 0);
 
     TreeNew_SetRedraw(TreeNewHandle, TRUE);
     TreeNew_SetTriState(TreeNewHandle, TRUE);
@@ -614,6 +615,12 @@ BEGIN_SORT_FUNCTION(TokenState)
 }
 END_SORT_FUNCTION
 
+BEGIN_SORT_FUNCTION(PendingIrp)
+{
+    sortResult = ucharcmp(node1->PendingIrp, node2->PendingIrp);
+}
+END_SORT_FUNCTION
+
 BOOLEAN NTAPI PhpThreadTreeNewCallback(
     _In_ HWND hwnd,
     _In_ PH_TREENEW_MESSAGE Message,
@@ -666,6 +673,7 @@ BOOLEAN NTAPI PhpThreadTreeNewCallback(
                     SORT_FUNCTION(TidHex),
                     SORT_FUNCTION(CpuCore),
                     SORT_FUNCTION(TokenState),
+                    SORT_FUNCTION(PendingIrp),
                 };
                 int (__cdecl *sortFunction)(void *, const void *, const void *);
 
@@ -994,16 +1002,19 @@ BOOLEAN NTAPI PhpThreadTreeNewCallback(
                 break;
             case PH_THREAD_TREELIST_COLUMN_CRITICAL:
                 {
-                    BOOLEAN breakOnTermination;
+                    BOOLEAN breakOnTermination = FALSE;
 
                     if (threadItem->ThreadHandle)
                     {
-                        if (NT_SUCCESS(PhGetThreadBreakOnTermination(threadItem->ThreadHandle, &breakOnTermination)))
-                        {
-                            if (breakOnTermination)
-                                PhInitializeStringRef(&getCellText->Text, L"Critical");
-                        }
+                        PhGetThreadBreakOnTermination(threadItem->ThreadHandle, &breakOnTermination);
                     }
+
+                    if (breakOnTermination)
+                        PhInitializeStringRef(&getCellText->Text, L"Critical");
+                    else
+                        PhInitializeEmptyStringRef(&getCellText->Text);
+
+                    node->BreakOnTermination = breakOnTermination;
                 }
                 break;
             case PH_THREAD_TREELIST_COLUMN_TIDHEX:
@@ -1093,6 +1104,23 @@ BOOLEAN NTAPI PhpThreadTreeNewCallback(
                         node->TokenState = PH_THREAD_TOKEN_STATE_UNKNOWN;
                         PhInitializeEmptyStringRef(&getCellText->Text);
                     }
+                }
+                break;
+            case PH_THREAD_TREELIST_COLUMN_PENDINGIRP:
+                {
+                    BOOLEAN pendingIrp = FALSE;
+
+                    if (threadItem->ThreadHandle)
+                    {
+                        PhGetThreadIsIoPending(threadItem->ThreadHandle, &pendingIrp);
+                    }
+
+                    if (pendingIrp)
+                        PhInitializeStringRef(&getCellText->Text, L"Yes");
+                    else
+                        PhInitializeEmptyStringRef(&getCellText->Text);
+
+                    node->PendingIrp = pendingIrp;
                 }
                 break;
             default:

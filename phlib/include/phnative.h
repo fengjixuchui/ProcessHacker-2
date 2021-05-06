@@ -1309,8 +1309,8 @@ typedef struct _PH_MODULE_INFO
     PVOID EntryPoint;
     ULONG Flags;
     PPH_STRING Name;
+    PPH_STRING FileNameWin32;
     PPH_STRING FileName;
-    PPH_STRING OriginalFileName;
 
     USHORT LoadOrderIndex; // -1 if N/A
     USHORT LoadCount; // -1 if N/A
@@ -1488,9 +1488,9 @@ NTSTATUS
 NTAPI
 PhCreateFile(
     _Out_ PHANDLE FileHandle,
-    _In_ PWSTR FileName,
+    _In_ PPH_STRING FileName,
     _In_ ACCESS_MASK DesiredAccess,
-    _In_opt_ ULONG FileAttributes,
+    _In_ ULONG FileAttributes,
     _In_ ULONG ShareAccess,
     _In_ ULONG CreateDisposition,
     _In_ ULONG CreateOptions
@@ -1553,6 +1553,14 @@ PhQueryFullAttributesFileWin32(
 PHLIBAPI
 NTSTATUS
 NTAPI
+PhQueryFullAttributesFile(
+    _In_ PPH_STRING FileName,
+    _Out_ PFILE_NETWORK_OPEN_INFORMATION FileInformation
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
 PhQueryAttributesFileWin32(
     _In_ PWSTR FileName,
     _Out_ PFILE_BASIC_INFORMATION FileInformation
@@ -1569,7 +1577,7 @@ PHLIBAPI
 BOOLEAN
 NTAPI
 PhDoesFileExists(
-    _In_ PWSTR FileName
+    _In_ PPH_STRING FileName
     );
 
 PHLIBAPI

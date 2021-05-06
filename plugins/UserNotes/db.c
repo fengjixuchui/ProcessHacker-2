@@ -33,9 +33,15 @@ ULONG NTAPI ObjectDbHashFunction(
     _In_ PVOID Entry
     );
 
-PPH_HASHTABLE ObjectDb;
+PPH_STRING ObjectDbPath = NULL;
+PPH_HASHTABLE ObjectDb = NULL;
 PH_QUEUED_LOCK ObjectDbLock = PH_QUEUED_LOCK_INIT;
-PPH_STRING ObjectDbPath;
+PH_STRINGREF IfeoKeyPath = PH_STRINGREF_INIT(L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\");
+PH_STRINGREF IfeoPerfOptionsKeyPath = PH_STRINGREF_INIT(L"\\PerfOptions");
+PH_STRINGREF IfeoPerfOptionsKeyName = PH_STRINGREF_INIT(L"PerfOptions");
+PH_STRINGREF IfeoCpuPriorityClassKeyName = PH_STRINGREF_INIT(L"CpuPriorityClass");
+PH_STRINGREF IfeoIoPriorityClassKeyName = PH_STRINGREF_INIT(L"IoPriority");
+PH_STRINGREF IfeoPagePriorityClassKeyName = PH_STRINGREF_INIT(L"PagePriority");
 
 VOID InitializeDb(
     VOID
@@ -76,6 +82,7 @@ ULONG GetNumberOfDbObjects(
     return ObjectDb->Count;
 }
 
+_Acquires_exclusive_lock_(ObjectDbLock)
 VOID LockDb(
     VOID
     )
@@ -83,6 +90,7 @@ VOID LockDb(
     PhAcquireQueuedLockExclusive(&ObjectDbLock);
 }
 
+_Releases_exclusive_lock_(ObjectDbLock)
 VOID UnlockDb(
     VOID
     )
@@ -407,6 +415,243 @@ NTSTATUS SaveDb(
         NULL
         );
     PhFreeXmlObject(topNode);
+
+    return status;
+}
+
+BOOLEAN FindIfeoObject(
+    _In_ PPH_STRINGREF Name,
+    _Out_opt_ PULONG CpuPriorityClass,
+    _Out_opt_ PULONG IoPriorityClass,
+    _Out_opt_ PULONG PagePriorityClass
+    )
+{
+    BOOLEAN status = FALSE;
+    ULONG value;
+    HANDLE keyHandle;
+    PPH_STRING keyPath;
+
+    keyPath = PhConcatStringRef3(
+        &IfeoKeyPath,
+        Name,
+        &IfeoPerfOptionsKeyPath
+        );
+
+    if (NT_SUCCESS(PhOpenKey(
+        &keyHandle,
+        KEY_READ,
+        PH_KEY_LOCAL_MACHINE,
+        &keyPath->sr,
+        0
+        )))
+    {
+        if (CpuPriorityClass)
+        {
+            if (status = ((value = PhQueryRegistryUlongEx(keyHandle, &IfeoCpuPriorityClassKeyName)) != ULONG_MAX))
+            {
+                *CpuPriorityClass = value;
+            }
+        }
+
+        if (IoPriorityClass)
+        {
+            if (status = ((value = PhQueryRegistryUlongEx(keyHandle, &IfeoIoPriorityClassKeyName)) != ULONG_MAX))
+            {
+                *IoPriorityClass = value;
+            }
+        }
+
+        if (PagePriorityClass)
+        {
+            if (status = ((value = PhQueryRegistryUlongEx(keyHandle, &IfeoPagePriorityClassKeyName)) != ULONG_MAX))
+            {
+                *PagePriorityClass = value;
+            }
+        }
+
+        NtClose(keyHandle);
+    }
+
+    PhDereferenceObject(keyPath);
+
+    return status;
+}
+
+NTSTATUS CreateIfeoObject(
+    _In_ PPH_STRINGREF Name,
+    _In_ ULONG CpuPriorityClass,
+    _In_ ULONG IoPriorityClass,
+    _In_ ULONG PagePriorityClass
+    )
+{
+    NTSTATUS status;
+    HANDLE keyRootHandle;
+    HANDLE keyHandle;
+    PPH_STRING keyPath;
+
+    keyPath = PhConcatStringRef2(
+        &IfeoKeyPath,
+        Name
+        );
+
+    status = PhCreateKey(
+        &keyRootHandle,
+        KEY_WRITE,
+        PH_KEY_LOCAL_MACHINE,
+        &keyPath->sr,
+        OBJ_OPENIF,
+        0,
+        NULL
+        );
+
+    if (!NT_SUCCESS(status))
+    {
+        PhDereferenceObject(keyPath);
+        return status;
+    }
+
+    status = PhCreateKey(
+        &keyHandle,
+        KEY_WRITE,
+        keyRootHandle,
+        &IfeoPerfOptionsKeyName,
+        OBJ_OPENIF,
+        0,
+        NULL
+        );
+
+    if (NT_SUCCESS(status))
+    {
+        if (CpuPriorityClass != ULONG_MAX)
+        {
+            status = PhSetValueKey(
+                keyHandle,
+                &IfeoCpuPriorityClassKeyName,
+                REG_DWORD,
+                &CpuPriorityClass,
+                sizeof(ULONG)
+                );
+        }
+
+        if (IoPriorityClass != ULONG_MAX)
+        {
+            status = PhSetValueKey(
+                keyHandle,
+                &IfeoIoPriorityClassKeyName,
+                REG_DWORD,
+                &IoPriorityClass,
+                sizeof(ULONG)
+                );
+        }
+
+        if (PagePriorityClass != ULONG_MAX)
+        {
+            status = PhSetValueKey(
+                keyHandle,
+                &IfeoPagePriorityClassKeyName,
+                REG_DWORD,
+                &PagePriorityClass,
+                sizeof(ULONG)
+                );
+        }
+
+        NtClose(keyHandle);
+    }
+
+    NtClose(keyRootHandle);
+    PhDereferenceObject(keyPath);
+
+    return status;
+}
+
+NTSTATUS DeleteIfeoObject(
+    _In_ PPH_STRINGREF Name,
+    _In_ ULONG CpuPriorityClass,
+    _In_ ULONG IoPriorityClass,
+    _In_ ULONG PagePriorityClass
+    )
+{
+    NTSTATUS status;
+    HANDLE keyRootHandle;
+    HANDLE keyHandle;
+    PPH_STRING keyPath;
+    ULONG priorityClass = 0;
+    ULONG ioPriorityClass = 0;
+    ULONG pagePriorityClass = 0;
+
+    keyPath = PhConcatStringRef2(
+        &IfeoKeyPath,
+        Name
+        );
+
+    status = PhCreateKey(
+        &keyRootHandle,
+        KEY_READ | KEY_WRITE | DELETE,
+        PH_KEY_LOCAL_MACHINE,
+        &keyPath->sr,
+        OBJ_OPENIF,
+        0,
+        NULL
+        );
+
+    if (!NT_SUCCESS(status))
+    {
+        PhDereferenceObject(keyPath);
+        return status;
+    }
+
+    status = PhOpenKey(
+        &keyHandle,
+        KEY_READ | KEY_WRITE | DELETE,
+        keyRootHandle,
+        &IfeoPerfOptionsKeyName,
+        0
+        );
+
+    if (NT_SUCCESS(status))
+    {
+        if (CpuPriorityClass != ULONG_MAX)
+        {
+            status = PhDeleteValueKey(keyHandle, &IfeoCpuPriorityClassKeyName);
+        }
+
+        if (IoPriorityClass != ULONG_MAX)
+        {
+            status = PhDeleteValueKey(keyHandle, &IfeoIoPriorityClassKeyName);
+        }
+
+        if (PagePriorityClass != ULONG_MAX)
+        {
+            status = PhDeleteValueKey(keyHandle, &IfeoPagePriorityClassKeyName);
+        }
+
+        priorityClass = PhQueryRegistryUlongEx(keyHandle, &IfeoCpuPriorityClassKeyName);
+        ioPriorityClass = PhQueryRegistryUlongEx(keyHandle, &IfeoIoPriorityClassKeyName);
+        pagePriorityClass = PhQueryRegistryUlongEx(keyHandle, &IfeoPagePriorityClassKeyName);
+
+        if (
+            priorityClass == ULONG_MAX &&
+            ioPriorityClass == ULONG_MAX &&
+            pagePriorityClass == ULONG_MAX
+            )
+        {
+            NtDeleteKey(keyHandle);
+        }
+
+        NtClose(keyHandle);
+    }
+
+    if (
+        priorityClass == ULONG_MAX &&
+        ioPriorityClass == ULONG_MAX &&
+        pagePriorityClass == ULONG_MAX
+        )
+    {
+        NtDeleteKey(keyRootHandle);
+    }
+
+    NtClose(keyRootHandle);
+    PhDereferenceObject(keyPath);
 
     return status;
 }

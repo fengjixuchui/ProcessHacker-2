@@ -3,7 +3,7 @@
  *   Hardware Devices Plugin
  *
  * Copyright (C) 2016 wj32
- * Copyright (C) 2015-2020 dmex
+ * Copyright (C) 2015-2021 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -446,7 +446,7 @@ VOID FindNetworkAdapters(
 
                 if (NT_SUCCESS(PhCreateFile(
                     &deviceHandle,
-                    PhGetString(adapterEntry->DevicePath),
+                    adapterEntry->DevicePath,
                     FILE_GENERIC_READ,
                     FILE_ATTRIBUTE_NORMAL,
                     FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -732,7 +732,7 @@ VOID LoadNetworkAdapterImages(
         {
             if (dllIconPath = PhExpandEnvironmentStrings(&dllPartSr))
             {
-                if (PhExtractIconEx(dllIconPath->Buffer, (INT)index, &smallIcon, NULL))
+                if (PhExtractIconEx(dllIconPath, FALSE, (INT)index, &smallIcon, NULL))
                 {
                     Context->ImageList = ImageList_Create(
                         24, // GetSystemMetrics(SM_CXSMICON)

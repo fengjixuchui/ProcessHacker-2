@@ -121,18 +121,26 @@ PPH_MODULE_PROVIDER PhCreateModuleProvider(
         )))
     {
         // Try to get a handle with query limited information + vm read access.
-        status = PhOpenProcess(
+        if (!NT_SUCCESS(status = PhOpenProcess(
             &moduleProvider->ProcessHandle,
             PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
             ProcessId
-            );
+            )))
+        {
+            // Try to get a handle with query limited information (required for WSL when KPH disabled) (dmex)
+            status = PhOpenProcess(
+                &moduleProvider->ProcessHandle,
+                PROCESS_QUERY_LIMITED_INFORMATION,
+                ProcessId
+                );
+        }
 
         moduleProvider->RunStatus = status;
     }
 
     if (NT_SUCCESS(PhGetProcessImageFileNameByProcessId(ProcessId, &fileName)))
     {
-        PhMoveReference(&moduleProvider->ProcessFileName, PhGetFileName(fileName));
+        PhMoveReference(&moduleProvider->ProcessFileName, fileName);
     }
 
     if (WindowsVersion >= WINDOWS_8 && moduleProvider->ProcessHandle)
@@ -268,8 +276,8 @@ VOID PhpModuleItemDeleteProcedure(
     PhEmCallObjectOperation(EmModuleItemType, moduleItem, EmObjectDelete);
 
     if (moduleItem->Name) PhDereferenceObject(moduleItem->Name);
+    if (moduleItem->FileNameWin32) PhDereferenceObject(moduleItem->FileNameWin32);
     if (moduleItem->FileName) PhDereferenceObject(moduleItem->FileName);
-    if (moduleItem->OriginalFileName) PhDereferenceObject(moduleItem->OriginalFileName);
     if (moduleItem->VerifySignerName) PhDereferenceObject(moduleItem->VerifySignerName);
     PhDeleteImageVersionInfo(&moduleItem->VersionInfo);
 }
@@ -363,7 +371,7 @@ NTSTATUS PhpModuleQueryWorker(
     if (PhEnableProcessQueryStage2) // HACK (dmex)
     {
         data->VerifyResult = PhVerifyFileCached(
-            data->ModuleItem->FileName,
+            data->ModuleItem->FileNameWin32,
             data->ModuleProvider->PackageFullName,
             &data->VerifySignerName,
             FALSE
@@ -374,7 +382,7 @@ NTSTATUS PhpModuleQueryWorker(
         // HACK HACK HACK (dmex)
         // 3rd party CLR's don't set the LDRP_COR_IMAGE flag so we'll check binaries for a CLR section and set the flag ourselves.
         // This is needed to detect standard .NET images loaded by .NET core, Mono and other CLR runtimes.
-        if (NT_SUCCESS(PhLoadMappedImageEx(PhGetString(data->ModuleItem->FileName), NULL, &mappedImage)))
+        if (NT_SUCCESS(PhLoadMappedImageEx(data->ModuleItem->FileName, NULL, &mappedImage)))
         {
             PH_MAPPED_IMAGE_CFG cfgConfig = { 0 };
 
@@ -430,7 +438,7 @@ NTSTATUS PhpModuleQueryWorker(
             else
             {
                 data->ImageCoherencyStatus = PhGetProcessModuleImageCoherency(
-                    PhGetString(data->ModuleItem->FileName),
+                    data->ModuleItem->FileName,
                     data->ModuleProvider->ProcessHandle,
                     data->ModuleItem->BaseAddress,
                     data->ModuleItem->Type == PH_MODULE_TYPE_KERNEL_MODULE,
@@ -480,9 +488,10 @@ static BOOLEAN NTAPI EnumModulesCallback(
     PPH_MODULE_INFO copy;
 
     copy = PhAllocateCopy(Module, sizeof(PH_MODULE_INFO));
+
     PhReferenceObject(copy->Name);
+    PhReferenceObject(copy->FileNameWin32);
     PhReferenceObject(copy->FileName);
-    PhReferenceObject(copy->OriginalFileName);
 
     PhAddItemList((PPH_LIST)Context, copy);
 
@@ -604,8 +613,8 @@ VOID PhModuleProviderUpdate(
             FILE_NETWORK_OPEN_INFORMATION networkOpenInfo;
 
             PhReferenceObject(module->Name);
+            PhReferenceObject(module->FileNameWin32);
             PhReferenceObject(module->FileName);
-            PhReferenceObject(module->OriginalFileName);
 
             moduleItem = PhCreateModuleItem();
             moduleItem->BaseAddress = module->BaseAddress;
@@ -617,11 +626,11 @@ VOID PhModuleProviderUpdate(
             moduleItem->LoadCount = module->LoadCount;
             moduleItem->LoadTime = module->LoadTime;
             moduleItem->Name = module->Name;
+            moduleItem->FileNameWin32 = module->FileNameWin32;
             moduleItem->FileName = module->FileName;
-            moduleItem->OriginalFileName = module->OriginalFileName;
             moduleItem->ParentBaseAddress = module->ParentBaseAddress;
 
-            PhInitializeImageVersionInfo(&moduleItem->VersionInfo, moduleItem->FileName->Buffer);
+            PhInitializeImageVersionInfoEx(&moduleItem->VersionInfo, moduleItem->FileName, PhEnableVersionShortText);
 
             if (moduleProvider->IsSubsystemProcess)
             {
@@ -756,7 +765,7 @@ VOID PhModuleProviderUpdate(
             if (!moduleProvider->CetEnabled)
                 moduleItem->ImageDllCharacteristicsEx &= ~IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT;
 
-            if (NT_SUCCESS(PhQueryFullAttributesFileWin32(moduleItem->FileName->Buffer, &networkOpenInfo)))
+            if (NT_SUCCESS(PhQueryFullAttributesFile(moduleItem->FileName, &networkOpenInfo)))
             {
                 moduleItem->FileLastWriteTime = networkOpenInfo.LastWriteTime;
                 moduleItem->FileEndOfFile = networkOpenInfo.EndOfFile;
@@ -769,7 +778,7 @@ VOID PhModuleProviderUpdate(
             if (moduleItem->Type != PH_MODULE_TYPE_ELF_MAPPED_IMAGE)
             {
                 // See if the file has already been verified; if not, queue for verification.
-                moduleItem->VerifyResult = PhVerifyFileCached(moduleItem->FileName, NULL, &moduleItem->VerifySignerName, TRUE);
+                moduleItem->VerifyResult = PhVerifyFileCached(moduleItem->FileNameWin32, NULL, &moduleItem->VerifySignerName, TRUE);
 
                 //if (moduleItem->VerifyResult == VrUnknown) // (dmex)
                 PhpQueueModuleQuery(moduleProvider, moduleItem);
@@ -815,6 +824,7 @@ VOID PhModuleProviderUpdate(
         PPH_MODULE_INFO module = modules->Items[i];
 
         PhDereferenceObject(module->Name);
+        PhDereferenceObject(module->FileNameWin32);
         PhDereferenceObject(module->FileName);
         PhFree(module);
     }

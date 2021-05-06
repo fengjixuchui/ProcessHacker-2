@@ -122,7 +122,7 @@ VOID PhInitializeModuleList(
     PhAddTreeNewColumnEx(Context->TreeNewHandle, PHMOTLC_CET, FALSE, L"CET", 50, PH_ALIGN_LEFT, ULONG_MAX, 0, TRUE);
     PhAddTreeNewColumnEx(Context->TreeNewHandle, PHMOTLC_COHERENCY, FALSE, L"Image coherency", 70, PH_ALIGN_RIGHT, ULONG_MAX, DT_RIGHT, TRUE);
     PhAddTreeNewColumnEx2(Context->TreeNewHandle, PHMOTLC_TIMELINE, FALSE, L"Timeline", 100, PH_ALIGN_LEFT, ULONG_MAX, 0, TN_COLUMN_FLAG_CUSTOMDRAW | TN_COLUMN_FLAG_SORTDESCENDING);
-    PhAddTreeNewColumn(Context->TreeNewHandle, PHMOTLC_ORIGINALNAME, FALSE, L"Original name", 200, PH_ALIGN_LEFT, ULONG_MAX, 0);
+    PhAddTreeNewColumn(Context->TreeNewHandle, PHMOTLC_ORIGINALNAME, FALSE, L"Original name", 200, PH_ALIGN_LEFT, ULONG_MAX, DT_PATH_ELLIPSIS);
 
     TreeNew_SetRedraw(Context->TreeNewHandle, TRUE);
 
@@ -575,7 +575,7 @@ END_SORT_FUNCTION
 
 BEGIN_SORT_FUNCTION(FileName)
 {
-    sortResult = PhCompareStringWithNull(moduleItem1->FileName, moduleItem2->FileName, TRUE);
+    sortResult = PhCompareStringWithNull(moduleItem1->FileNameWin32, moduleItem2->FileNameWin32, TRUE);
 }
 END_SORT_FUNCTION
 
@@ -693,7 +693,7 @@ END_SORT_FUNCTION
 
 BEGIN_SORT_FUNCTION(OriginalName)
 {
-    sortResult = PhCompareString(moduleItem1->OriginalFileName, moduleItem2->OriginalFileName, TRUE);
+    sortResult = PhCompareString(moduleItem1->FileName, moduleItem2->FileName, TRUE);
 }
 END_SORT_FUNCTION
 
@@ -853,7 +853,7 @@ BOOLEAN NTAPI PhpModuleTreeNewCallback(
                 getCellText->Text = PhGetStringRef(moduleItem->VersionInfo.FileVersion);
                 break;
             case PHMOTLC_FILENAME:
-                getCellText->Text = PhGetStringRef(moduleItem->FileName);
+                getCellText->Text = PhGetStringRef(moduleItem->FileNameWin32);
                 break;
             case PHMOTLC_TYPE:
                 {
@@ -1099,7 +1099,7 @@ BOOLEAN NTAPI PhpModuleTreeNewCallback(
                 }
                 break;
             case PHMOTLC_ORIGINALNAME:
-                getCellText->Text = PhGetStringRef(moduleItem->OriginalFileName);
+                getCellText->Text = PhGetStringRef(moduleItem->FileName);
                 break;
             default:
                 return FALSE;
@@ -1187,7 +1187,7 @@ BOOLEAN NTAPI PhpModuleTreeNewCallback(
             if (!node->TooltipText)
             {
                 node->TooltipText = PhFormatImageVersionInfo(
-                    node->ModuleItem->FileName,
+                    node->ModuleItem->FileNameWin32,
                     &node->ModuleItem->VersionInfo,
                     NULL,
                     0
@@ -1426,8 +1426,13 @@ BOOLEAN PhShouldShowModuleCoherency(
 
     if (ModuleItem->ImageCoherencyStatus == STATUS_PENDING ||
         ModuleItem->ImageCoherencyStatus == LONG_MAX ||
-        PhIsNullOrEmptyString(ModuleItem->FileName))
+        PhIsNullOrEmptyString(ModuleItem->FileNameWin32))
     {
+        //
+        // The image coherency status is pending, uninitialized, or we don't
+        // have a file name for the module. We have not completed/attempted
+        // the calculation yet, don't show the coherency.
+        //
         return FALSE;
     }
 
@@ -1436,6 +1441,10 @@ BOOLEAN PhShouldShowModuleCoherency(
         ModuleItem->Type == PH_MODULE_TYPE_MAPPED_IMAGE ||
         ModuleItem->Type == PH_MODULE_TYPE_KERNEL_MODULE))
     {
+        //
+        // We special case these modules types and opt not to show/calculate
+        // the coherency for them. 
+        //
         return FALSE;
     }
 
@@ -1443,19 +1452,42 @@ BOOLEAN PhShouldShowModuleCoherency(
         ModuleItem->ImageCoherencyStatus == STATUS_INVALID_IMAGE_NOT_MZ ||
         ModuleItem->ImageCoherencyStatus == STATUS_INVALID_IMAGE_FORMAT ||
         ModuleItem->ImageCoherencyStatus == STATUS_INVALID_IMAGE_HASH ||
-        ModuleItem->ImageCoherencyStatus == STATUS_IMAGE_SUBSYSTEM_NOT_PRESENT ||
-        ModuleItem->ImageCoherencyStatus == STATUS_ACCESS_DENIED)
+        ModuleItem->ImageCoherencyStatus == STATUS_IMAGE_SUBSYSTEM_NOT_PRESENT)
     {
+        //
+        // The coherency status is a success code or a known "valid" error
+        // from the coherency calculation (PhGetProcessModuleImageCoherency).
+        // We should show the coherency value.
+        //
+
         if (CheckThreshold)
         {
+            //
+            // A threshold check is requested. This is generally used for
+            // checking if we should highlight an entry. If the coherency
+            // is below a given threshold return true. Otherwise false.
+            //
             if (ModuleItem->ImageCoherency <= LowImageCoherencyThreshold)
             {
                 return TRUE;
             }
-
-            return FALSE;
+            else
+            {
+                return FALSE;
+            }
         }
+
+        //
+        // No special handling, return true.
+        //
+        return TRUE;
     }
 
-    return TRUE;
+    //
+    // Any other error NTSTATUS we don't show the coherency value, we'll
+    // show the reason why we failed the calculation (a string representation
+    // of the status code).
+    //
+
+    return FALSE;
 }

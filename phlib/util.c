@@ -1761,6 +1761,35 @@ PVOID PhGetFileVersionInfo(
     return NULL;
 }
 
+PVOID PhGetFileVersionInfoEx(
+    _In_ PPH_STRING FileName
+    )
+{
+    PVOID imageBaseAddress;
+    PVOID versionInfo;
+
+    if (!NT_SUCCESS(PhLoadLibraryAsImageResource(FileName, &imageBaseAddress)))
+        return NULL;
+
+    if (PhLoadResourceCopy(
+        imageBaseAddress,
+        MAKEINTRESOURCE(VS_VERSION_INFO),
+        VS_FILE_INFO,
+        NULL,
+        &versionInfo
+        ))
+    {
+        if (PhIsFileVersionInfo32(versionInfo))
+        {
+            PhFreeLibraryAsImageResource(imageBaseAddress);
+            return versionInfo;
+        }
+    }
+
+    PhFreeLibraryAsImageResource(imageBaseAddress);
+    return NULL;
+}
+
 PVOID PhGetFileVersionInfoValue(
     _In_ PVS_VERSION_INFO_STRUCT32 VersionInfo
     )
@@ -2123,36 +2152,39 @@ BOOLEAN PhInitializeImageVersionInfo(
     PVOID versionInfo;
     ULONG langCodePage;
 
-    if (versionInfo = PhGetFileVersionInfo(FileName))
-    {
-        langCodePage = PhGetFileVersionInfoLangCodePage(versionInfo);
-
-        PhpGetImageVersionVersionString(ImageVersionInfo, versionInfo);
-        PhpGetImageVersionInfoFields(ImageVersionInfo, versionInfo, langCodePage);
-
-        PhFree(versionInfo);
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-_Success_(return)
-BOOLEAN PhInitializeImageVersionInfo2(
-    _Out_ PPH_IMAGE_VERSION_INFO ImageVersionInfo,
-    _In_ PWSTR FileName
-    )
-{
-    PVOID versionInfo;
-    ULONG langCodePage;
-
     versionInfo = PhGetFileVersionInfo(FileName);
 
     if (!versionInfo)
         return FALSE;
 
     langCodePage = PhGetFileVersionInfoLangCodePage(versionInfo);
-    PhpGetImageVersionVersionStringEx(ImageVersionInfo, versionInfo, langCodePage);
+    PhpGetImageVersionVersionString(ImageVersionInfo, versionInfo);
+    PhpGetImageVersionInfoFields(ImageVersionInfo, versionInfo, langCodePage);
+
+    PhFree(versionInfo);
+    return TRUE;
+}
+
+_Success_(return)
+BOOLEAN PhInitializeImageVersionInfoEx(
+    _Out_ PPH_IMAGE_VERSION_INFO ImageVersionInfo,
+    _In_ PPH_STRING FileName,
+    _In_ BOOLEAN ExtendedVersionInfo
+    )
+{
+    PVOID versionInfo;
+    ULONG langCodePage;
+
+    versionInfo = PhGetFileVersionInfoEx(FileName);
+
+    if (!versionInfo)
+        return FALSE;
+
+    langCodePage = PhGetFileVersionInfoLangCodePage(versionInfo);
+    if (ExtendedVersionInfo)
+        PhpGetImageVersionVersionStringEx(ImageVersionInfo, versionInfo, langCodePage);
+    else
+        PhpGetImageVersionVersionString(ImageVersionInfo, versionInfo);
     PhpGetImageVersionInfoFields(ImageVersionInfo, versionInfo, langCodePage);
 
     PhFree(versionInfo);
@@ -2355,16 +2387,8 @@ BOOLEAN PhInitializeImageVersionInfoCached(
     }
     else
     {
-        if (ExtendedVersion)
-        {
-            if (!PhInitializeImageVersionInfo2(&versionInfo, FileName->Buffer))
-                return FALSE;
-        }
-        else
-        {
-            if (!PhInitializeImageVersionInfo(&versionInfo, FileName->Buffer))
-                return FALSE;
-        }
+        if (!PhInitializeImageVersionInfoEx(&versionInfo, FileName, ExtendedVersion))
+            return FALSE;
     }
 
     if (!PhpImageVersionInfoCacheHashtable)
@@ -4164,16 +4188,27 @@ ULONG PhQueryRegistryUlong(
     _In_opt_ PWSTR ValueName
     )
 {
+    if (ValueName)
+    {
+        PH_STRINGREF valueName;
+
+        PhInitializeStringRef(&valueName, ValueName);
+
+        return PhQueryRegistryUlongEx(KeyHandle, &valueName);
+    }
+
+    return PhQueryRegistryUlongEx(KeyHandle, NULL);
+}
+
+ULONG PhQueryRegistryUlongEx(
+    _In_ HANDLE KeyHandle,
+    _In_opt_ PPH_STRINGREF ValueName
+    )
+{
     ULONG ulong = ULONG_MAX;
-    PH_STRINGREF valueName;
     PKEY_VALUE_PARTIAL_INFORMATION buffer;
 
-    if (ValueName)
-        PhInitializeStringRef(&valueName, ValueName);
-    else
-        PhInitializeEmptyStringRef(&valueName);
-
-    if (NT_SUCCESS(PhQueryValueKey(KeyHandle, &valueName, KeyValuePartialInformation, &buffer)))
+    if (NT_SUCCESS(PhQueryValueKey(KeyHandle, ValueName, KeyValuePartialInformation, &buffer)))
     {
         if (buffer->Type == REG_DWORD)
         {
@@ -4881,7 +4916,7 @@ VOID PhSetFileDialogFileName(
  * \param NumberOfFunctions A variable that receives the number of functions that the image imports.
  */
 NTSTATUS PhIsExecutablePacked(
-    _In_ PWSTR FileName,
+    _In_ PPH_STRING FileName,
     _Out_ PBOOLEAN IsPacked,
     _Out_opt_ PULONG NumberOfModules,
     _Out_opt_ PULONG NumberOfFunctions
@@ -4925,7 +4960,7 @@ NTSTATUS PhIsExecutablePacked(
     BOOLEAN isModuleMscoree = FALSE;
     BOOLEAN isPacked;
 
-    status = PhLoadMappedImage(
+    status = PhLoadMappedImageEx(
         FileName,
         NULL,
         &mappedImage
@@ -6205,68 +6240,6 @@ PPH_STRING PhLoadIndirectString(
     return indirectString;
 }
 
-// rev from ExtractIconExW
-BOOLEAN PhExtractIcon(
-    _In_ PWSTR FileName, 
-    _Out_opt_ HICON *IconLarge,
-    _Out_opt_ HICON *IconSmall
-    )
-{
-    return PhExtractIconEx(FileName, 0, IconLarge, IconSmall);
-}
-
-_Success_(return)
-BOOLEAN PhExtractIconEx(
-    _In_ PWSTR FileName,
-    _In_ INT IconIndex,
-    _Out_opt_ HICON *IconLarge,
-    _Out_opt_ HICON *IconSmall
-    )
-{
-    static PH_INITONCE initOnce = PH_INITONCE_INIT;
-    static INT (WINAPI *PrivateExtractIconExW)(
-        _In_ PCWSTR FileName,
-        _In_ INT IconIndex,
-        _Out_opt_ HICON* IconLarge,
-        _Out_opt_ HICON* IconSmall,
-        _In_ INT IconCount
-        ) = NULL;
-    HICON iconLarge = NULL;
-    HICON iconSmall = NULL;
-
-    if (PhBeginInitOnce(&initOnce))
-    {
-        PrivateExtractIconExW = PhGetDllProcedureAddress(L"user32.dll", "PrivateExtractIconExW", 0);
-        PhEndInitOnce(&initOnce);
-    }
-
-    if (!PrivateExtractIconExW)
-        return FALSE;
-
-    if (PrivateExtractIconExW(
-        FileName,
-        IconIndex,
-        IconLarge ? &iconLarge : NULL,
-        IconSmall ? &iconSmall : NULL,
-        1
-        ) > 0)
-    {
-        if (IconLarge)
-            *IconLarge = iconLarge;
-        if (IconSmall)
-            *IconSmall = iconSmall;
-
-        return TRUE;
-    }
-
-    if (iconLarge)
-        DestroyIcon(iconLarge);
-    if (iconSmall)
-        DestroyIcon(iconSmall);
-
-    return FALSE;
-}
-
 HWND PhHungWindowFromGhostWindow(
     _In_ HWND WindowHandle
     )
@@ -7302,7 +7275,7 @@ NTSTATUS PhLoaderEntryRelocateImage(
         return status;
 
     relocationDirectoryEnd = PTR_ADD_OFFSET(relocationDirectory, dataDirectory->Size);
-    relocationDelta = (ULONG_PTR)PTR_SUB_OFFSET(imageNtHeader->OptionalHeader.ImageBase, BaseAddress);
+    relocationDelta = (ULONG_PTR)PTR_SUB_OFFSET(BaseAddress, imageNtHeader->OptionalHeader.ImageBase);
 
     while ((ULONG_PTR)relocationDirectory < (ULONG_PTR)relocationDirectoryEnd)
     {
@@ -7372,7 +7345,7 @@ NTSTATUS PhLoaderEntryRelocateImage(
 }
 
 NTSTATUS PhLoaderEntryLoadDll(
-    _In_ PWSTR FileName,
+    _In_ PPH_STRING FileName,
     _Out_ PVOID* BaseAddress
     )
 {
@@ -7382,7 +7355,7 @@ NTSTATUS PhLoaderEntryLoadDll(
     PVOID imageBaseAddress;
     SIZE_T imageBaseOffset;
 
-    status = PhCreateFileWin32(
+    status = PhCreateFile(
         &fileHandle,
         FileName,
         FILE_READ_DATA | FILE_EXECUTE | SYNCHRONIZE,
@@ -7438,7 +7411,7 @@ NTSTATUS PhLoaderEntryLoadDll(
 
     NtClose(sectionHandle);
 
-    if (NT_SUCCESS(status))
+    if (status == STATUS_IMAGE_NOT_AT_BASE)
     {
         status = PhLoaderEntryRelocateImage(
             imageBaseAddress
@@ -7860,4 +7833,82 @@ PhLoadLibrarySafe(
                           NULL,
                           LOAD_LIBRARY_SEARCH_SYSTEM32 |
                           LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
+}
+
+// rev from LoadLibraryEx with LOAD_LIBRARY_AS_IMAGE_RESOURCE
+// with some changes for using a read-only page/section. (dmex)
+NTSTATUS PhLoadLibraryAsImageResource(
+    _In_ PPH_STRING FileName,
+    _Out_opt_ PVOID *BaseAddress
+    )
+{
+    NTSTATUS status;
+    HANDLE fileHandle;
+    HANDLE sectionHandle;
+    PVOID imageBaseAddress;
+    SIZE_T imageBaseSize;
+
+    status = PhCreateFile(
+        &fileHandle,
+        FileName,
+        FILE_READ_ATTRIBUTES | FILE_READ_DATA | SYNCHRONIZE,
+        FILE_ATTRIBUTE_NORMAL,
+        FILE_SHARE_READ | FILE_SHARE_DELETE,
+        FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
+        );
+
+    if (!NT_SUCCESS(status))
+        return status;
+
+    status = NtCreateSection(
+        &sectionHandle,
+        SECTION_QUERY | SECTION_MAP_READ,
+        NULL,
+        NULL,
+        PAGE_READONLY,
+        WindowsVersion < WINDOWS_8 ? SEC_IMAGE : SEC_IMAGE_NO_EXECUTE,
+        fileHandle
+        );
+
+    NtClose(fileHandle);
+
+    if (!NT_SUCCESS(status))
+        return status;
+
+    imageBaseAddress = NULL;
+    imageBaseSize = 0;
+
+    status = NtMapViewOfSection(
+        sectionHandle,
+        NtCurrentProcess(),
+        &imageBaseAddress,
+        0,
+        0,
+        NULL,
+        &imageBaseSize,
+        ViewShare,
+        WindowsVersion < WINDOWS_10_RS2 ? 0 : MEM_MAPPED,
+        PAGE_READONLY
+        );
+
+    NtClose(sectionHandle);
+
+    if (NT_SUCCESS(status))
+    {
+        // Windows returns the address with bitwise OR|2 for use with LDR_IS_IMAGEMAPPING (dmex)
+        if (BaseAddress)
+        {
+            *BaseAddress = (PVOID)((ULONG_PTR)imageBaseAddress | 2);
+        }
+    }
+
+    return status;
+}
+
+NTSTATUS PhFreeLibraryAsImageResource(
+    _In_ PVOID BaseAddress
+    )
+{
+    return NtUnmapViewOfSection(NtCurrentProcess(), BaseAddress);
 }

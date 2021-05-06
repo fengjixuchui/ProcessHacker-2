@@ -11,6 +11,10 @@ extern "C" {
 
 // guisup
 
+typedef BOOL (WINAPI *_IsImmersiveProcess)(
+    _In_ HANDLE ProcessHandle
+    );
+
 #define RFF_NOBROWSE 0x0001
 #define RFF_NODEFAULT 0x0002
 #define RFF_CALCDIRECTORY 0x0004
@@ -39,6 +43,7 @@ typedef LPNMRUNFILEDLGW LPNMRUNFILEDLG;
 
 typedef HANDLE HTHEME;
 
+extern _IsImmersiveProcess IsImmersiveProcess_I;
 extern PH_INTEGER_PAIR PhSmallIconSize;
 extern PH_INTEGER_PAIR PhLargeIconSize;
 
@@ -360,7 +365,7 @@ VOID PhSetImageListBitmap(
 
 PHLIBAPI
 HICON PhLoadIcon(
-    _In_opt_ HINSTANCE InstanceHandle,
+    _In_opt_ PVOID ImageBaseAddress,
     _In_ PWSTR Name,
     _In_ ULONG Flags,
     _In_opt_ ULONG Width,
@@ -939,6 +944,27 @@ PhGetGlobalTimerQueue(
     VOID
     );
 
+
+PHLIBAPI
+BOOLEAN
+NTAPI
+PhExtractIcon(
+    _In_ PWSTR FileName,
+    _Out_opt_ HICON *IconLarge,
+    _Out_opt_ HICON *IconSmall
+    );
+
+_Success_(return)
+PHLIBAPI
+BOOLEAN
+NTAPI
+PhExtractIconEx(
+    _In_ PPH_STRING FileName,
+    _In_ BOOLEAN NativeFileName,
+    _In_ INT32 IconIndex,
+    _Out_opt_ HICON *IconLarge,
+    _Out_opt_ HICON *IconSmall
+    );
 // theme support (theme.c)
 
 PHLIBAPI extern HFONT PhApplicationFont; // phapppub

@@ -55,10 +55,12 @@ ULONG GetNumberOfDbObjects(
     VOID
     );
 
+_Acquires_exclusive_lock_(ObjectDbLock)
 VOID LockDb(
     VOID
     );
 
+_Releases_exclusive_lock_(ObjectDbLock)
 VOID UnlockDb(
     VOID
     );
@@ -88,6 +90,27 @@ NTSTATUS LoadDb(
 
 NTSTATUS SaveDb(
     VOID
+    );
+
+BOOLEAN FindIfeoObject(
+    _In_ PPH_STRINGREF Name,
+    _Out_opt_ PULONG CpuPriorityClass,
+    _Out_opt_ PULONG IoPriorityClass,
+    _Out_opt_ PULONG PagePriorityClass
+    );
+
+NTSTATUS CreateIfeoObject(
+    _In_ PPH_STRINGREF Name,
+    _In_ ULONG CpuPriority,
+    _In_ ULONG IoPriority,
+    _In_ ULONG PagePriority
+    );
+
+NTSTATUS DeleteIfeoObject(
+    _In_ PPH_STRINGREF Name,
+    _In_ ULONG CpuPriority,
+    _In_ ULONG IoPriority,
+    _In_ ULONG PagePriority
     );
 
 #endif

@@ -195,7 +195,7 @@ VOID PhpFreeImageCoherencyContext(
 */
 PPH_IMAGE_COHERENCY_CONTEXT PhpCreateImageCoherencyContext(
     _In_ PH_IMAGE_COHERENCY_SCAN_TYPE Type,
-    _In_ PWSTR FileName,
+    _In_ PPH_STRING FileName,
     _In_ HANDLE ProcessHandle,
     _In_opt_ PVOID RemoteImageBase,
     _In_ NTSTATUS RemoteImageBaseStatus,
@@ -211,7 +211,6 @@ PPH_IMAGE_COHERENCY_CONTEXT PhpCreateImageCoherencyContext(
     //
 
     context = PhAllocateZero(sizeof(PH_IMAGE_COHERENCY_CONTEXT));
-
     context->Type = Type;
     context->ReadVirtualMemory = ReadVirtualMemoryCallback;
 
@@ -223,6 +222,7 @@ PPH_IMAGE_COHERENCY_CONTEXT PhpCreateImageCoherencyContext(
         NULL,
         &context->MappedImage
         );
+
     if (NT_SUCCESS(context->MappedImageStatus))
     {
         PH_MAPPED_IMAGE_RELOC relocs;
@@ -1079,7 +1079,7 @@ CleanupExit:
 * All other errors are failures to calculate.
 */
 NTSTATUS PhGetProcessImageCoherency(
-    _In_ PWSTR FileName,
+    _In_ PPH_STRING FileName,
     _In_ HANDLE ProcessId,
     _In_ PH_IMAGE_COHERENCY_SCAN_TYPE Type,
     _Out_ PFLOAT ImageCoherency
@@ -1172,7 +1172,7 @@ CleanupExit:
 * All other errors are failures to calculate.
 */
 NTSTATUS PhGetProcessModuleImageCoherency(
-    _In_ PWSTR FileName,
+    _In_ PPH_STRING FileName,
     _In_ HANDLE ProcessHandle,
     _In_ PVOID ImageBaseAddress,
     _In_ BOOLEAN IsKernelModule,
@@ -1189,7 +1189,7 @@ NTSTATUS PhGetProcessModuleImageCoherency(
                                              FileName,
                                              ProcessHandle,
                                              ImageBaseAddress,
-                                             STATUS_SUCCESS,
+                                             STATUS_UNSUCCESSFUL,
                                              IsKernelModule ? KphReadVirtualMemoryUnsafe : NtReadVirtualMemory);
 
     status = PhpInspectForImageCoherency(ProcessHandle,

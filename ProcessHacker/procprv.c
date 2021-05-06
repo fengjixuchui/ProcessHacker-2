@@ -717,14 +717,14 @@ VOID PhpProcessQueryStage1(
 
     if (!PhIsNullOrEmptyString(processItem->FileName) && !processItem->IsSubsystemProcess)
     {
-        if (PhDoesFileExists(PhGetString(processItem->FileName)))
+        if (PhDoesFileExists(processItem->FileName))
         {
-            Data->IconEntry = PhImageListExtractIcon(processItem->FileNameWin32);
+            Data->IconEntry = PhImageListExtractIcon(processItem->FileName, TRUE);
 
             // Version info.
             PhInitializeImageVersionInfoCached(
                 &Data->VersionInfo,
-                processItem->FileNameWin32,
+                processItem->FileName,
                 FALSE,
                 PhEnableVersionShortText
                 );
@@ -841,9 +841,9 @@ VOID PhpProcessQueryStage1(
     }
 
     // Immersive
-    if (processHandleLimited && WindowsVersion >= WINDOWS_8 && IsImmersiveProcess && !processItem->IsSubsystemProcess)
+    if (processHandleLimited && WindowsVersion >= WINDOWS_8 && IsImmersiveProcess_I && !processItem->IsSubsystemProcess)
     {
-        Data->IsImmersive = !!IsImmersiveProcess(processHandleLimited);
+        Data->IsImmersive = !!IsImmersiveProcess_I(processHandleLimited);
     }
 
     // Package full name
@@ -922,7 +922,7 @@ VOID PhpProcessQueryStage2(
             );
 
         status = PhIsExecutablePacked(
-            processItem->FileNameWin32->Buffer,
+            processItem->FileName,
             &Data->IsPacked,
             &Data->ImportModules,
             &Data->ImportFunctions
@@ -975,7 +975,7 @@ VOID PhpProcessQueryStage2(
             }
 
             Data->ImageCoherencyStatus = PhGetProcessImageCoherency(
-                processItem->FileNameWin32->Buffer,
+                processItem->FileName,
                 processItem->ProcessId,
                 type,
                 &Data->ImageCoherency
@@ -2429,11 +2429,11 @@ VOID PhProcessProviderUpdate(
             }
 
             // Immersive
-            if (processItem->QueryHandle && WindowsVersion >= WINDOWS_8 && IsImmersiveProcess && !processItem->IsSubsystemProcess)
+            if (processItem->QueryHandle && WindowsVersion >= WINDOWS_8 && IsImmersiveProcess_I && !processItem->IsSubsystemProcess)
             {
                 BOOLEAN isImmersive;
 
-                isImmersive = !!IsImmersiveProcess(processItem->QueryHandle);
+                isImmersive = !!IsImmersiveProcess_I(processItem->QueryHandle);
 
                 if (processItem->IsImmersive != isImmersive)
                 {
@@ -3069,9 +3069,9 @@ VOID PhProcessImageListInitialization(
     HICON iconLarge;
 
     PhImageListItemType = PhCreateObjectType(L"ImageListItem", 0, PhpImageListItemDeleteProcedure);
-    
-    PhProcessLargeImageList = ImageList_Create(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), ILC_MASK | ILC_COLOR32, 100, 100);
-    PhProcessSmallImageList = ImageList_Create(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), ILC_MASK | ILC_COLOR32, 100, 100);
+
+    PhProcessLargeImageList = ImageList_Create(PhLargeIconSize.X, PhLargeIconSize.Y, ILC_MASK | ILC_COLOR32, 100, 100);
+    PhProcessSmallImageList = ImageList_Create(PhSmallIconSize.X, PhSmallIconSize.Y, ILC_MASK | ILC_COLOR32, 100, 100);
     ImageList_SetBkColor(PhProcessLargeImageList, CLR_NONE);
     ImageList_SetBkColor(PhProcessSmallImageList, CLR_NONE);
 
@@ -3110,11 +3110,12 @@ ULONG PhImageListCacheHashtableHashFunction(
 }
 
 PPH_IMAGELIST_ITEM PhImageListExtractIcon(
-    _In_ PPH_STRING FileName
+    _In_ PPH_STRING FileName,
+    _In_ BOOLEAN NativeFileName
     )
 {
-    HICON largeIcon;
-    HICON smallIcon;
+    HICON largeIcon = NULL;
+    HICON smallIcon = NULL;
     PPH_IMAGELIST_ITEM newentry;
 
     PhAcquireQueuedLockShared(&PhImageListCacheHashtableLock);
@@ -3143,8 +3144,13 @@ PPH_IMAGELIST_ITEM PhImageListExtractIcon(
 
     PhReleaseQueuedLockShared(&PhImageListCacheHashtableLock);
 
-    if (!PhExtractIcon(PhGetString(FileName), &largeIcon, &smallIcon))
-        return NULL;
+    PhExtractIconEx(
+        FileName,
+        NativeFileName,
+        0,
+        &largeIcon,
+        &smallIcon
+        );
 
     PhAcquireQueuedLockExclusive(&PhImageListCacheHashtableLock);
 
@@ -3160,10 +3166,19 @@ PPH_IMAGELIST_ITEM PhImageListExtractIcon(
 
     newentry = PhCreateObjectZero(sizeof(PH_IMAGELIST_ITEM), PhImageListItemType);
     newentry->FileName = PhReferenceObject(FileName);
-    newentry->LargeIconIndex = ImageList_AddIcon(PhProcessLargeImageList, largeIcon);
-    newentry->SmallIconIndex = ImageList_AddIcon(PhProcessSmallImageList, smallIcon);
-    DestroyIcon(smallIcon);
-    DestroyIcon(largeIcon);
+
+    if (largeIcon && smallIcon)
+    {
+        newentry->LargeIconIndex = ImageList_AddIcon(PhProcessLargeImageList, largeIcon);
+        newentry->SmallIconIndex = ImageList_AddIcon(PhProcessSmallImageList, smallIcon);
+        DestroyIcon(smallIcon);
+        DestroyIcon(largeIcon);
+    }
+    else
+    {
+        newentry->LargeIconIndex = 0;
+        newentry->SmallIconIndex = 0;
+    }
 
     PhReferenceObject(newentry);
     PhAddEntryHashtable(PhImageListCacheHashtable, &newentry);

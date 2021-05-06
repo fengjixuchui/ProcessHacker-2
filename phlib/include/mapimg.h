@@ -62,7 +62,7 @@ PHLIBAPI
 NTSTATUS
 NTAPI
 PhLoadMappedImageEx(
-    _In_opt_ PWSTR FileName,
+    _In_opt_ PPH_STRING FileName,
     _In_opt_ HANDLE FileHandle,
     _Out_ PPH_MAPPED_IMAGE MappedImage
     );
@@ -81,6 +81,16 @@ PhMapViewOfEntireFile(
     _In_opt_ PWSTR FileName,
     _In_opt_ HANDLE FileHandle,
     _Out_ PVOID *ViewBase,
+    _Out_ PSIZE_T Size
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhMapViewOfEntireFileEx(
+    _In_opt_ PPH_STRING FileName,
+    _In_opt_ HANDLE FileHandle,
+    _Out_ PVOID* ViewBase,
     _Out_ PSIZE_T Size
     );
 
@@ -131,6 +141,14 @@ PhGetMappedImageDataEntry(
     _In_ PPH_MAPPED_IMAGE MappedImage,
     _In_ ULONG Index,
     _Out_ PIMAGE_DATA_DIRECTORY *Entry
+    );
+
+PHLIBAPI
+PVOID
+NTAPI
+PhGetMappedImageDirectoryEntry(
+    _In_ PPH_MAPPED_IMAGE MappedImage,
+    _In_ ULONG Index
     );
 
 PHLIBAPI

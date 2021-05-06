@@ -37,7 +37,7 @@ typedef struct _PH_NETWORK_CONNECTION
     ULONG ProtocolType;
     PH_IP_ENDPOINT LocalEndpoint;
     PH_IP_ENDPOINT RemoteEndpoint;
-    ULONG State;
+    MIB_TCP_STATE State;
     HANDLE ProcessId;
     LARGE_INTEGER CreateTime;
     ULONGLONG OwnerInfo[PH_NETWORK_OWNER_INFO_SIZE];
@@ -87,6 +87,39 @@ ULONG NTAPI PhpResolveCacheHashtableHashFunction(
 BOOLEAN PhGetNetworkConnections(
     _Out_ PPH_NETWORK_CONNECTION *Connections,
     _Out_ PULONG NumberOfConnections
+    );
+
+//DECLSPEC_IMPORT ULONG WINAPI InternalGetTcpTableWithOwnerModule(
+//    _Out_ PVOID* Tcp4Table, // PMIB_TCPTABLE_OWNER_MODULE
+//    _In_ PVOID HeapHandle,
+//    _In_opt_ ULONG HeapFlags
+//    );
+//DECLSPEC_IMPORT ULONG WINAPI InternalGetTcp6TableWithOwnerModule(
+//    _Out_ PVOID* Tcp6Table, // PMIB_TCP6TABLE_OWNER_MODULE
+//    _In_ PVOID HeapHandle,
+//    _In_opt_ ULONG HeapFlags
+//    );
+//DECLSPEC_IMPORT ULONG WINAPI InternalGetUdpTableWithOwnerModule(
+//    _Out_ PVOID* Udp4Table, // PMIB_UDPTABLE_OWNER_MODULE
+//    _In_ PVOID HeapHandle,
+//    _In_opt_ ULONG HeapFlags
+//    );
+//DECLSPEC_IMPORT ULONG WINAPI InternalGetUdp6TableWithOwnerModule(
+//    _Out_ PVOID* Udp6Table, // PMIB_UDP6TABLE_OWNER_MODULE
+//    _In_ PVOID HeapHandle,
+//    _In_opt_ ULONG HeapFlags
+//    );
+
+DECLSPEC_IMPORT ULONG WINAPI InternalGetBoundTcpEndpointTable(
+    _Out_ PVOID* BoundTcpTable, // PMIB_TCPTABLE2
+    _In_ PVOID HeapHandle,
+    _In_opt_ ULONG HeapFlags
+    );
+
+DECLSPEC_IMPORT ULONG WINAPI InternalGetBoundTcp6EndpointTable(
+    _Out_ PVOID* BoundTcpTable, // PMIB_TCP6TABLE2
+    _In_ PVOID HeapHandle,
+    _In_opt_ ULONG HeapFlags
     );
 
 PPH_OBJECT_TYPE PhNetworkItemType = NULL;
@@ -363,6 +396,7 @@ PPH_STRING PhpGetDnsReverseNameFromAddress(
     {
     case PH_IPV4_NETWORK_TYPE:
         {
+            static PH_STRINGREF reverseLookupDomainNameSr = PH_STRINGREF_INIT(DNS_IP4_REVERSE_DOMAIN_STRING);
             PH_FORMAT format[9];
             SIZE_T returnLength;
             WCHAR reverseNameBuffer[IP4_REVERSE_DOMAIN_STRING_LENGTH];
@@ -375,7 +409,7 @@ PPH_STRING PhpGetDnsReverseNameFromAddress(
             PhInitFormatC(&format[5], L'.');
             PhInitFormatU(&format[6], Address->InAddr.s_net);
             PhInitFormatC(&format[7], L'.');
-            PhInitFormatS(&format[8], DNS_IP4_REVERSE_DOMAIN_STRING);
+            PhInitFormatSR(&format[8], reverseLookupDomainNameSr);
 
             if (PhFormatToBuffer(
                 format,
@@ -417,6 +451,7 @@ PPH_STRING PhpGetDnsReverseNameFromAddress(
         }
     case PH_IPV6_NETWORK_TYPE:
         {
+            static PH_STRINGREF reverseLookupDomainNameSr = PH_STRINGREF_INIT(DNS_IP6_REVERSE_DOMAIN_STRING);
             PH_STRING_BUILDER stringBuilder;
 
             // DNS_MAX_IP6_REVERSE_NAME_LENGTH
@@ -424,15 +459,42 @@ PPH_STRING PhpGetDnsReverseNameFromAddress(
 
             for (INT i = sizeof(IN6_ADDR) - 1; i >= 0; i--)
             {
-                PhAppendFormatStringBuilder(
-                    &stringBuilder,
-                    L"%hhx.%hhx.",
-                    Address->In6Addr.s6_addr[i] & 0xF,
-                    (Address->In6Addr.s6_addr[i] >> 4) & 0xF
-                    );
+                PH_FORMAT format[4];
+                SIZE_T returnLength;
+                WCHAR reverseNameBuffer[PH_INT32_STR_LEN_1];
+
+                PhInitFormatX(&format[0], Address->In6Addr.s6_addr[i] & 0xF);
+                PhInitFormatC(&format[1], L'.');
+                PhInitFormatX(&format[2], (Address->In6Addr.s6_addr[i] >> 4) & 0xF);
+                PhInitFormatC(&format[3], L'.');
+
+                if (PhFormatToBuffer(
+                    format,
+                    RTL_NUMBER_OF(format),
+                    reverseNameBuffer,
+                    sizeof(reverseNameBuffer),
+                    &returnLength
+                    ))
+                {
+                    PH_STRINGREF reverseNameString;
+
+                    reverseNameString.Buffer = reverseNameBuffer;
+                    reverseNameString.Length = returnLength - sizeof(UNICODE_NULL);
+
+                    PhAppendStringBuilder(&stringBuilder, &reverseNameString);
+                }
+                else
+                {
+                    PhAppendFormatStringBuilder(
+                        &stringBuilder,
+                        L"%hhx.%hhx.",
+                        Address->In6Addr.s6_addr[i] & 0xF,
+                        (Address->In6Addr.s6_addr[i] >> 4) & 0xF
+                        );
+                }
             }
 
-            PhAppendStringBuilder2(&stringBuilder, DNS_IP6_REVERSE_DOMAIN_STRING);
+            PhAppendStringBuilder(&stringBuilder, &reverseLookupDomainNameSr);
 
             return PhFinalStringBuilderString(&stringBuilder);
         }
@@ -700,7 +762,8 @@ VOID PhNetworkProviderUpdate(
                     (*networkItem)->ProtocolType == connections[i].ProtocolType &&
                     PhEqualIpEndpoint(&(*networkItem)->LocalEndpoint, &connections[i].LocalEndpoint) &&
                     PhEqualIpEndpoint(&(*networkItem)->RemoteEndpoint, &connections[i].RemoteEndpoint) &&
-                    (*networkItem)->ProcessId == connections[i].ProcessId
+                    (*networkItem)->ProcessId == connections[i].ProcessId &&
+                    (*networkItem)->CreateTime.QuadPart == connections[i].CreateTime.QuadPart
                     )
                 {
                     found = TRUE;
@@ -986,6 +1049,8 @@ PWSTR PhGetTcpStateName(
         return L"Time wait";
     case MIB_TCP_STATE_DELETE_TCB:
         return L"Delete TCB";
+    case MIB_TCP_STATE_RESERVED:
+        return L"Bound";
     default:
         return L"Unknown";
     }
@@ -999,11 +1064,11 @@ BOOLEAN PhGetNetworkConnections(
     PVOID table;
     ULONG tableSize;
     PMIB_TCPTABLE_OWNER_MODULE tcp4Table;
-    PMIB_UDPTABLE_OWNER_MODULE udp4Table;
     PMIB_TCP6TABLE_OWNER_MODULE tcp6Table;
+    PMIB_UDPTABLE_OWNER_MODULE udp4Table;
     PMIB_UDP6TABLE_OWNER_MODULE udp6Table;
-    ULONG count = 0;
     ULONG i;
+    ULONG count = 0;
     ULONG index = 0;
     PPH_NETWORK_CONNECTION connections;
 
@@ -1028,7 +1093,6 @@ BOOLEAN PhGetNetworkConnections(
 
     tableSize = 0;
     GetExtendedTcpTable(NULL, &tableSize, FALSE, AF_INET6, TCP_TABLE_OWNER_MODULE_ALL, 0);
-
     table = PhAllocate(tableSize);
 
     if (GetExtendedTcpTable(table, &tableSize, FALSE, AF_INET6, TCP_TABLE_OWNER_MODULE_ALL, 0) == NO_ERROR)
