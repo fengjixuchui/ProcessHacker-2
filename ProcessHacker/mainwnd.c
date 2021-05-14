@@ -169,7 +169,11 @@ BOOLEAN PhMainWndInitialization(
     // Allow WM_PH_ACTIVATE to pass through UIPI. (wj32)
     if (PhGetOwnTokenAttributes().Elevated)
     {
+#if (PHNT_VERSION >= PHNT_WIN7)
         ChangeWindowMessageFilterEx(PhMainWndHandle, WM_PH_ACTIVATE, MSGFLT_ADD, NULL);
+#elif (PHNT_VERSION >= PHNT_VISTA)
+        ChangeWindowMessageFilter(WM_PH_ACTIVATE, MSGFLT_ADD);
+#endif
     }
 
     // Initialize child controls.
@@ -518,8 +522,19 @@ NTSTATUS PhMwpLoadStage1Worker(
 
     PhNfLoadStage2();
 
-    // Make sure we get closed late in the shutdown process.
-    SetProcessShutdownParameters(0x100, 0);
+    if (WindowsVersion < WINDOWS_10)
+    {
+        // Make sure we get closed late in the shutdown process.
+        SetProcessShutdownParameters(0x100, SHUTDOWN_NORETRY);
+    }
+    else
+    {
+        // Same values as taskmgr.exe on Win10 (dmex)
+        SetProcessShutdownParameters(0x1, SHUTDOWN_NORETRY);
+    }
+
+    // Register application for restart (dmex)
+    RegisterApplicationRestart(NULL, 0);
 
     DelayedLoadCompleted = TRUE;
     //PostMessage((HWND)Parameter, WM_PH_DELAYED_LOAD_COMPLETED, 0, 0);
@@ -535,8 +550,6 @@ VOID PhMwpOnDestroy(
     )
 {
     PhMainWndExiting = TRUE;
-
-    PhSetIntegerSetting(L"MainWindowTabRestoreIndex", TabCtrl_GetCurSel(TabControlHandle));
 
     // Notify pages and plugins that we are shutting down.
 
@@ -634,7 +647,7 @@ VOID PhMwpOnCommand(
 
             if (PhShellProcessHacker(
                 WindowHandle,
-                L"-v",
+                L"-v -newinstance",
                 SW_SHOW,
                 PH_SHELL_EXECUTE_ADMIN,
                 PH_SHELL_APP_PROPAGATE_PARAMETERS | PH_SHELL_APP_PROPAGATE_PARAMETERS_IGNORE_VISIBILITY,
@@ -1355,6 +1368,18 @@ VOID PhMwpOnCommand(
             PhFree(processes);
         }
         break;
+    case ID_MISCELLANEOUS_ECOMODE:
+        {
+            PPH_PROCESS_ITEM processItem = PhGetSelectedProcessItem();
+
+            if (processItem)
+            {
+                PhReferenceObject(processItem);
+                PhUiSetEcoModeProcess(WindowHandle, processItem);
+                PhDereferenceObject(processItem);
+            }
+        }
+        break;
     case ID_WINDOW_BRINGTOFRONT:
         {
             if (IsWindow(PhMwpSelectedProcessWindowHandle))
@@ -1975,6 +2000,7 @@ VOID PhMwpSaveSettings(
 
     PhNfSaveSettings();
     PhSetIntegerSetting(L"IconNotifyMask", PhMwpNotifyIconNotifyMask);
+    PhSetIntegerSetting(L"MainWindowTabRestoreIndex", TabCtrl_GetCurSel(TabControlHandle));
 
     PhSaveWindowPlacementToSetting(L"MainWindowPosition", L"MainWindowSize", WindowHandle);
     PhMwpSaveWindowState(WindowHandle);

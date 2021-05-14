@@ -46,8 +46,10 @@ VOID PhAddDefaultSettings(
     PhpAddStringSetting(L"ImageGeneralPropertiesListViewSort", L"");
     PhpAddStringSetting(L"ImageDirectoryListViewColumns", L"");
     PhpAddStringSetting(L"ImageLoadCfgListViewColumns", L"");
-    PhpAddStringSetting(L"ImageExportsListViewColumns", L"");
-    PhpAddStringSetting(L"ImageImportsListViewColumns", L"");
+    PhpAddStringSetting(L"ImageExportsTreeListColumns", L"");
+    PhpAddStringSetting(L"ImageExportsTreeListSort", L"0,1"); // 0, AscendingSortOrder
+    PhpAddStringSetting(L"ImageImportsTreeListColumns", L"");
+    PhpAddStringSetting(L"ImageImportsTreeListSort", L"0,1"); // 0, AscendingSortOrder
     PhpAddStringSetting(L"ImageExceptions32ListViewColumns", L"");
     PhpAddStringSetting(L"ImageExceptions64ListViewColumns", L"");
     PhpAddStringSetting(L"ImageLayoutTreeColumns", L"");
@@ -89,6 +91,7 @@ VOID PhUpdateCachedSettings(
     VOID
     )
 {
+    //PhMaxSizeUnit = PhGetIntegerSetting(L"MaxSizeUnit");
     PeEnableThemeSupport = !!PhGetIntegerSetting(L"EnableThemeSupport");
 }
 

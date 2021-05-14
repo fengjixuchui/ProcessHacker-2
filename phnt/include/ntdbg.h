@@ -56,7 +56,7 @@ NTSYSAPI
 ULONG
 STDAPIVCALLTYPE
 DbgPrint(
-    _In_z_ _Printf_format_string_ PSTR Format,
+    _In_z_ _Printf_format_string_ PCSTR Format,
     ...
     );
 
@@ -66,7 +66,7 @@ STDAPIVCALLTYPE
 DbgPrintEx(
     _In_ ULONG ComponentId,
     _In_ ULONG Level,
-    _In_z_ _Printf_format_string_ PSTR Format,
+    _In_z_ _Printf_format_string_ PCSTR Format,
     ...
     );
 
@@ -76,7 +76,7 @@ NTAPI
 vDbgPrintEx(
     _In_ ULONG ComponentId,
     _In_ ULONG Level,
-    _In_z_ PCH Format,
+    _In_z_ PCCH Format,
     _In_ va_list arglist
     );
 
@@ -84,10 +84,10 @@ NTSYSAPI
 ULONG
 NTAPI
 vDbgPrintExWithPrefix(
-    _In_z_ PCH Prefix,
+    _In_z_ PCCH Prefix,
     _In_ ULONG ComponentId,
     _In_ ULONG Level,
-    _In_z_ PCH Format,
+    _In_z_ PCCH Format,
     _In_ va_list arglist
     );
 
@@ -112,7 +112,7 @@ NTSYSAPI
 ULONG
 NTAPI
 DbgPrompt(
-    _In_ PCH Prompt,
+    _In_ PCCH Prompt,
     _Out_writes_bytes_(Length) PCH Response,
     _In_ ULONG Length
     );
