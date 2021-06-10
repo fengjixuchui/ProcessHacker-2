@@ -3208,7 +3208,7 @@ NTSTATUS PhSetFilePosition(
     IO_STATUS_BLOCK isb;
 
     if (Position)
-        positionInfo.CurrentByteOffset = *Position;
+        positionInfo.CurrentByteOffset.QuadPart = Position->QuadPart;
     else
         positionInfo.CurrentByteOffset.QuadPart = 0;
 
@@ -6913,6 +6913,19 @@ PPH_STRING PhGetFileName(
         newFileName->Buffer[systemRoot.Length / sizeof(WCHAR)] = OBJ_NAME_PATH_SEPARATOR;
         memcpy(PTR_ADD_OFFSET(newFileName->Buffer, systemRoot.Length + sizeof(UNICODE_NULL)), FileName->Buffer, FileName->Length);
     }
+#ifdef _WIN64
+    // "SysWOW64\" means "C:\Windows\SysWOW64\".
+    else if (PhStartsWithString2(FileName, L"SysWOW64\\", TRUE))
+    {
+        PH_STRINGREF systemRoot;
+
+        PhGetSystemRoot(&systemRoot);
+        newFileName = PhCreateStringEx(NULL, systemRoot.Length + sizeof(UNICODE_NULL) + FileName->Length);
+        memcpy(newFileName->Buffer, systemRoot.Buffer, systemRoot.Length);
+        newFileName->Buffer[systemRoot.Length / sizeof(WCHAR)] = OBJ_NAME_PATH_SEPARATOR;
+        memcpy(PTR_ADD_OFFSET(newFileName->Buffer, systemRoot.Length + sizeof(UNICODE_NULL)), FileName->Buffer, FileName->Length);
+    }
+#endif
     else if (FileName->Length != 0 && FileName->Buffer[0] == OBJ_NAME_PATH_SEPARATOR)
     {
         PPH_STRING resolvedName;
@@ -9621,6 +9634,26 @@ NTSTATUS PhImpersonateClientOfNamedPipe(
         );
 }
 
+NTSTATUS PhDisableImpersonateNamedPipe(
+    _In_ HANDLE PipeHandle
+    )
+{
+    IO_STATUS_BLOCK isb;
+
+    return NtFsControlFile(
+        PipeHandle,
+        NULL,
+        NULL,
+        NULL,
+        &isb,
+        FSCTL_PIPE_DISABLE_IMPERSONATE,
+        NULL,
+        0,
+        NULL,
+        0
+        );
+}
+
 NTSTATUS PhGetNamedPipeClientComputerName(
     _In_ HANDLE PipeHandle,
     _In_ ULONG ClientComputerNameLength,
@@ -10113,3 +10146,83 @@ CleanupExit:
     return status;
 }
 
+NTSTATUS PhGetThreadLastStatusValue(
+    _In_ HANDLE ThreadHandle,
+    _In_opt_ HANDLE ProcessHandle,
+    _Out_ PNTSTATUS LastStatusValue
+    )
+{
+    NTSTATUS status;
+    THREAD_BASIC_INFORMATION basicInfo;
+    BOOLEAN openedProcessHandle = FALSE;
+#ifdef _WIN64
+    BOOLEAN isWow64 = FALSE;
+#endif
+
+    if (!NT_SUCCESS(status = PhGetThreadBasicInformation(ThreadHandle, &basicInfo)))
+        return status;
+
+    if (!ProcessHandle)
+    {
+        if (!NT_SUCCESS(status = PhOpenThreadProcess(
+            ThreadHandle,
+            PROCESS_VM_READ,
+            &ProcessHandle
+            )))
+            return status;
+
+        openedProcessHandle = TRUE;
+    }
+
+#ifdef _WIN64
+    PhGetProcessIsWow64(ProcessHandle, &isWow64);
+   
+    if (isWow64)
+    {
+        status = NtReadVirtualMemory(
+            ProcessHandle,
+            PTR_ADD_OFFSET(WOW64_GET_TEB32(basicInfo.TebBaseAddress), UFIELD_OFFSET(TEB32, LastStatusValue)),
+            LastStatusValue,
+            sizeof(NTSTATUS),
+            NULL
+            );
+    }
+    else
+#endif
+    {
+        status = NtReadVirtualMemory(
+            ProcessHandle,
+            PTR_ADD_OFFSET(basicInfo.TebBaseAddress, UFIELD_OFFSET(TEB, LastStatusValue)), // LastErrorValue/ExceptionCode
+            LastStatusValue,
+            sizeof(NTSTATUS),
+            NULL
+            );
+    }
+
+    if (openedProcessHandle)
+        NtClose(ProcessHandle);
+
+    return status;
+}
+
+BOOLEAN PhIsFirmwareSupported(
+    VOID
+    )
+{
+    UNICODE_STRING variableName = RTL_CONSTANT_STRING(L" ");
+    ULONG variableValueLength = 0;
+    GUID vendorGuid = { 0 };
+
+    if (NtQuerySystemEnvironmentValueEx(
+        &variableName, 
+        &vendorGuid,
+        NULL,
+        &variableValueLength,
+        NULL
+        ) == STATUS_VARIABLE_NOT_FOUND)
+    {
+        return TRUE;
+    }
+
+    return FALSE;
+}

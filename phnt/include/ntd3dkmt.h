@@ -429,7 +429,8 @@ typedef enum D3DKMT_DRIVERVERSION // QAI_DRIVERVERSION
     KMT_DRIVERVERSION_WDDM_2_4 = 2400, // 1803
     KMT_DRIVERVERSION_WDDM_2_5 = 2500, // 1809
     KMT_DRIVERVERSION_WDDM_2_6 = 2600, // 19H1
-    KMT_DRIVERVERSION_WDDM_2_7 = 2700 // 20H1
+    KMT_DRIVERVERSION_WDDM_2_7 = 2700, // 20H1
+    KMT_DRIVERVERSION_WDDM_3_0 = 3000, // 21H1
 } D3DKMT_DRIVERVERSION;
 
 // Specifies the type of display device that the graphics adapter supports.
@@ -888,7 +889,7 @@ typedef struct _D3DKMT_NODE_PERFDATA
     _In_ UINT32 PhysicalAdapterIndex; // The physical adapter index in a LDA chain.
     _Out_ ULONGLONG Frequency; // Clock frequency of the requested engine, represented in hertz.
     _Out_ ULONGLONG MaxFrequency; // The max frequency the engine can normally reach in hertz while not overclocked.
-    _Out_ ULONGLONG MaxFrequencyOC; // The max frequency the engine can reach with it�s current overclock in hertz.
+    _Out_ ULONGLONG MaxFrequencyOC; // The max frequency the engine can reach with its current overclock in hertz.
     _Out_ ULONG Voltage; // Voltage of the engine in milli volts mV
     _Out_ ULONG VoltageMax; // The max voltage of the engine in milli volts while not overclocked.
     _Out_ ULONG VoltageMaxOC; // The max voltage of the engine while overclocked in milli volts.

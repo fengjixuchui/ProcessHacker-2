@@ -182,6 +182,8 @@ VOID PhpInitializeThreadMenu(
                     PhSetFlagsEMenuItem(Menu, ID_THREAD_CRITICAL, PH_EMENU_CHECKED, PH_EMENU_CHECKED);
                 }
             }
+
+            NtClose(threadHandle);
         }
     }
 
@@ -450,6 +452,18 @@ BOOLEAN PhpThreadTreeFilterCallback(
     if (!PhIsNullOrEmptyString(threadNode->StateText))
     {
         if (PhpWordMatchThreadStringRef(Context->SearchboxText, &threadNode->StateText->sr))
+            return TRUE;
+    }
+
+    if (!PhIsNullOrEmptyString(threadNode->LastSystemCallText))
+    {
+        if (PhpWordMatchThreadStringRef(Context->SearchboxText, &threadNode->LastSystemCallText->sr))
+            return TRUE;
+    }
+
+    if (!PhIsNullOrEmptyString(threadNode->LastErrorCodeText))
+    {
+        if (PhpWordMatchThreadStringRef(Context->SearchboxText, &threadNode->LastErrorCodeText->sr))
             return TRUE;
     }
 
@@ -850,6 +864,7 @@ INT_PTR CALLBACK PhpProcessThreadsDlgProc(
             PhInitializeProviderEventQueue(&threadsContext->EventQueue, 100);
             threadsContext->SearchboxText = PhReferenceEmptyString();
             threadsContext->FilterEntry = PhAddTreeNewFilter(&threadsContext->ListContext.TreeFilterSupport, PhpThreadTreeFilterCallback, threadsContext);
+            threadsContext->ListContext.ProcessId = processItem->ProcessId;
 
             // Initialize the search box. (dmex)
             PhCreateSearchControl(hwndDlg, threadsContext->SearchboxHandle, L"Search Threads (Ctrl+K)");

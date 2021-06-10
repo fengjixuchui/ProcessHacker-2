@@ -2,6 +2,7 @@
  * KProcessHacker
  *
  * Copyright (C) 2010-2016 wj32
+ * Copyright (C) 2021 jxy-s
  *
  * This file is part of Process Hacker.
  *
@@ -45,7 +46,9 @@ NTSTATUS KpiPopulateKnownDllExtents(
     _Out_ PKPH_EXTENTS ModuleExtents
     );
 
-NTSTATUS KpiKnownDllInit();
+NTSTATUS KpiKnownDllInit(
+    VOID
+    );
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, DriverEntry)
@@ -379,12 +382,18 @@ NTSTATUS KpiPopulateKnownDllExtents(
     HANDLE sectionHandle;
     SECTION_IMAGE_INFORMATION sectionImageInfo;
     MEMORY_REGION_INFORMATION memoryRegionInfo;
+    PVOID sectionObject;
+    PVOID mappedBase;
+    SIZE_T mappedSize;
 
     NT_ASSERT(PsInitialSystemProcess == PsGetCurrentProcess());
 
     RtlZeroMemory(ModuleExtents, sizeof(*ModuleExtents));
 
     sectionHandle = NULL;
+    sectionObject = NULL;
+    mappedBase = NULL;
+    mappedSize = 0;
 
     InitializeObjectAttributes(&objectAttributes,
                                SectionName,
@@ -393,7 +402,7 @@ NTSTATUS KpiPopulateKnownDllExtents(
                                NULL);
 
     status = ZwOpenSection(&sectionHandle,
-                           SECTION_QUERY,
+                           SECTION_MAP_READ | SECTION_QUERY,
                            &objectAttributes);
     if (!NT_SUCCESS(status))
     {
@@ -411,22 +420,54 @@ NTSTATUS KpiPopulateKnownDllExtents(
         goto Exit;
     }
 
-    status = ZwQueryVirtualMemory(ZwCurrentProcess(),
-                                  sectionImageInfo.TransferAddress,
-                                  MemoryRegionInformation,
-                                  &memoryRegionInfo,
-                                  sizeof(memoryRegionInfo),
-                                  NULL);
+    //
+    // 21H2 no longer maps ntdll as an image in System. Querying the transfer
+    // address to get the extents in this context will fail. Rather than rely
+    // on ZwQueryVirtualMemory at all, we'll map it into system space to get
+    // the extents.
+    //
+    // Note, in the future if Microsoft decides to relocate KnownDLLs in
+    // every process we'll need to revisit this. That will likely involve
+    // retrieving the module extents per-process, in our case this is used
+    // for KPH communications validation so we'll need to the ntdll module
+    // extents out of PH.
+    //
+
+    status = ObReferenceObjectByHandle(sectionHandle,
+                                       SECTION_MAP_READ | SECTION_QUERY,
+                                       *MmSectionObjectType,
+                                       KernelMode,
+                                       &sectionObject,
+                                       NULL);
     if (!NT_SUCCESS(status))
     {
+        sectionObject = NULL;
+        goto Exit;
+    }
+
+    status = MmMapViewInSystemSpace(sectionObject, &mappedBase, &mappedSize);
+    if (!NT_SUCCESS(status))
+    {
+        mappedBase = NULL;
+        mappedSize = 0;
         goto Exit;
     }
 
     ModuleExtents->BaseAddress = sectionImageInfo.TransferAddress;
     ModuleExtents->EndAddress = PTR_ADD_OFFSET(ModuleExtents->BaseAddress,
-                                               memoryRegionInfo.RegionSize);
+                                               mappedSize);
 
 Exit:
+
+    if (mappedBase)
+    {
+        MmUnmapViewInSystemSpace(mappedBase);
+    }
+
+    if (sectionObject)
+    {
+        ObDereferenceObject(sectionObject);
+    }
 
     if (sectionHandle)
     {
@@ -441,7 +482,9 @@ Exit:
  *
  * \return Appropriate status.
 */
-NTSTATUS KpiKnownDllInit()
+NTSTATUS KpiKnownDllInit(
+    VOID
+    )
 {
     return KpiPopulateKnownDllExtents(&NtdllKnownDllName, &NtdllExtents);
 }

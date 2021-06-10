@@ -55,6 +55,15 @@ NtSetSystemEnvironmentValue(
     _In_ PUNICODE_STRING VariableValue
     );
 
+#define EFI_VARIABLE_NON_VOLATILE 0x00000001
+#define EFI_VARIABLE_BOOTSERVICE_ACCESS 0x00000002
+#define EFI_VARIABLE_RUNTIME_ACCESS 0x00000004
+#define EFI_VARIABLE_HARDWARE_ERROR_RECORD 0x00000008
+#define EFI_VARIABLE_AUTHENTICATED_WRITE_ACCESS 0x00000010
+#define EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS 0x00000020
+#define EFI_VARIABLE_APPEND_WRITE 0x00000040
+#define EFI_VARIABLE_ENHANCED_AUTHENTICATED_ACCESS 0x00000080
+
 NTSYSCALLAPI
 NTSTATUS
 NTAPI
@@ -63,7 +72,7 @@ NtQuerySystemEnvironmentValueEx(
     _In_ LPGUID VendorGuid,
     _Out_writes_bytes_opt_(*ValueLength) PVOID Value,
     _Inout_ PULONG ValueLength,
-    _Out_opt_ PULONG Attributes
+    _Out_opt_ PULONG Attributes // EFI_VARIABLE_*
     );
 
 NTSYSCALLAPI
@@ -73,8 +82,8 @@ NtSetSystemEnvironmentValueEx(
     _In_ PUNICODE_STRING VariableName,
     _In_ LPGUID VendorGuid,
     _In_reads_bytes_opt_(ValueLength) PVOID Value,
-    _In_ ULONG ValueLength,
-    _In_ ULONG Attributes
+    _In_ ULONG ValueLength, // 0 = delete variable
+    _In_ ULONG Attributes // EFI_VARIABLE_*
     );
 
 NTSYSCALLAPI
@@ -1046,21 +1055,21 @@ NtSetWnfProcessNotificationEvent(
 
 typedef enum _WORKERFACTORYINFOCLASS
 {
-    WorkerFactoryTimeout, // q; s: LARGE_INTEGER
-    WorkerFactoryRetryTimeout, // q; s: LARGE_INTEGER
-    WorkerFactoryIdleTimeout, // q; s: LARGE_INTEGER
-    WorkerFactoryBindingCount,
-    WorkerFactoryThreadMinimum, // q; s: ULONG
-    WorkerFactoryThreadMaximum, // q; s: ULONG
+    WorkerFactoryTimeout, // LARGE_INTEGER
+    WorkerFactoryRetryTimeout, // LARGE_INTEGER
+    WorkerFactoryIdleTimeout, // s: LARGE_INTEGER
+    WorkerFactoryBindingCount, // s: ULONG
+    WorkerFactoryThreadMinimum, // s: ULONG
+    WorkerFactoryThreadMaximum, // s: ULONG
     WorkerFactoryPaused, // ULONG or BOOLEAN
-    WorkerFactoryBasicInformation, // WORKER_FACTORY_BASIC_INFORMATION
+    WorkerFactoryBasicInformation, // q: WORKER_FACTORY_BASIC_INFORMATION
     WorkerFactoryAdjustThreadGoal,
     WorkerFactoryCallbackType,
     WorkerFactoryStackInformation, // 10
-    WorkerFactoryThreadBasePriority,
-    WorkerFactoryTimeoutWaiters, // since THRESHOLD
-    WorkerFactoryFlags,
-    WorkerFactoryThreadSoftMaximum,
+    WorkerFactoryThreadBasePriority, // s: ULONG
+    WorkerFactoryTimeoutWaiters, // s: ULONG, since THRESHOLD
+    WorkerFactoryFlags, // s: ULONG
+    WorkerFactoryThreadSoftMaximum, // s: ULONG
     WorkerFactoryThreadCpuSets, // since REDSTONE5
     MaxWorkerFactoryInfoClass
 } WORKERFACTORYINFOCLASS, *PWORKERFACTORYINFOCLASS;
@@ -3830,7 +3839,8 @@ typedef struct _SYSTEM_SHADOW_STACK_INFORMATION
             ULONG UserCetAllowed : 1;
             ULONG ReservedForUserCet : 6;
             ULONG KernelCetEnabled : 1;
-            ULONG ReservedForKernelCet : 7;
+            ULONG KernelCetAuditModeEnabled : 1;
+            ULONG ReservedForKernelCet : 6;       // since Windows 10 build 21387
             ULONG Reserved : 16;
         };
     };

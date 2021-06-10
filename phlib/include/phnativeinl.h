@@ -1776,7 +1776,8 @@ FORCEINLINE
 NTSTATUS
 PhGetProcessIsCetEnabled(
     _In_ HANDLE ProcessHandle,
-    _Out_ PBOOLEAN IsCetEnabled
+    _Out_ PBOOLEAN IsCetEnabled,
+    _Out_ PBOOLEAN IsCetStrictModeEnabled
     )
 {
     NTSTATUS status;
@@ -1795,9 +1796,24 @@ PhGetProcessIsCetEnabled(
     if (NT_SUCCESS(status))
     {
         *IsCetEnabled = !!policyInfo.UserShadowStackPolicy.EnableUserShadowStack;
+        *IsCetStrictModeEnabled = !!policyInfo.UserShadowStackPolicy.EnableUserShadowStackStrictMode;
     }
 
     return status;
+}
+
+FORCEINLINE
+NTSTATUS
+PhGetSystemShadowStackInformation(
+    _Out_ PSYSTEM_SHADOW_STACK_INFORMATION ShadowStackInformation
+    )
+{
+    return NtQuerySystemInformation(
+        SystemShadowStackInformation,
+        ShadowStackInformation,
+        sizeof(SYSTEM_SHADOW_STACK_INFORMATION),
+        NULL
+        );
 }
 
 #endif

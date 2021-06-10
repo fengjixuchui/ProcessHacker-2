@@ -136,9 +136,9 @@ VOID WeInitializeWindowTree(
     _Out_ PWE_WINDOW_TREE_CONTEXT Context
     )
 {
+    static PH_INITONCE initOnce = PH_INITONCE_INIT;
     HWND hwnd;
     PPH_STRING settings;
-    static PH_INITONCE initOnce = PH_INITONCE_INIT;
 
     if (PhBeginInitOnce(&initOnce))
     {
@@ -168,19 +168,18 @@ VOID WeInitializeWindowTree(
     {
         HICON iconSmall;
 
-        Context->NodeImageList = ImageList_Create(
+        Context->NodeImageList = PhImageListCreate(
             GetSystemMetrics(SM_CXSMICON),
             GetSystemMetrics(SM_CYSMICON),
             ILC_MASK | ILC_COLOR32,
             200,
             200
             );
-        ImageList_SetBkColor(Context->NodeImageList, CLR_NONE);
+        PhImageListSetBkColor(Context->NodeImageList, CLR_NONE);
         TreeNew_SetImageList(hwnd, Context->NodeImageList);
 
         PhGetStockApplicationIcon(&iconSmall, NULL);
-        ImageList_AddIcon(Context->NodeImageList, iconSmall);
-        DestroyIcon(iconSmall);
+        PhImageListAddIcon(Context->NodeImageList, iconSmall);
     }
 
     PhAddTreeNewColumn(hwnd, WEWNTLC_CLASS, TRUE, L"Class", 180, PH_ALIGN_LEFT, 0, 0);
@@ -231,7 +230,7 @@ VOID WeDeleteWindowTree(
         WepDestroyWindowNode(Context->NodeList->Items[i]);
 
     if (Context->NodeImageList)
-        ImageList_Destroy(Context->NodeImageList);
+        PhImageListDestroy(Context->NodeImageList);
 
     PhDereferenceObject(Context->NodeHashtable);
     PhDereferenceObject(Context->NodeList);
@@ -280,7 +279,7 @@ PWE_WINDOW_NODE WeAddWindowNode(
 
         if (windowIcon = WepGetInternalWindowIcon(WindowHandle, ICON_SMALL))
         {
-            windowNode->WindowIconIndex = ImageList_AddIcon(Context->NodeImageList, windowIcon);
+            windowNode->WindowIconIndex = PhImageListAddIcon(Context->NodeImageList, windowIcon);
             DestroyIcon(windowIcon);
         }
     }
@@ -635,16 +634,14 @@ PWE_WINDOW_NODE WeGetSelectedWindowNode(
     return NULL;
 }
 
-VOID WeGetSelectedWindowNodes(
+BOOLEAN WeGetSelectedWindowNodes(
     _In_ PWE_WINDOW_TREE_CONTEXT Context,
-    _Out_ PWE_WINDOW_NODE **Windows,
-    _Out_ PULONG NumberOfWindows
+    _Out_ PWE_WINDOW_NODE **Nodes,
+    _Out_ PULONG NumberOfNodes
     )
 {
-    PPH_LIST list;
+    PPH_LIST list = PhCreateList(2);
     ULONG i;
-
-    list = PhCreateList(2);
 
     for (i = 0; i < Context->NodeList->Count; i++)
     {
@@ -656,10 +653,17 @@ VOID WeGetSelectedWindowNodes(
         }
     }
 
-    *Windows = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
-    *NumberOfWindows = list->Count;
+    if (list->Count)
+    {
+        *Nodes = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
+        *NumberOfNodes = list->Count;
+
+        PhDereferenceObject(list);
+        return TRUE;
+    }
 
     PhDereferenceObject(list);
+    return FALSE;
 }
 
 VOID WeExpandAllWindowNodes(

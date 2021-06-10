@@ -650,28 +650,26 @@ PPH_STACK_TREE_ROOT_NODE GetSelectedThreadStackNode(
     _In_ PPH_THREAD_STACK_CONTEXT Context
     )
 {
-    PPH_STACK_TREE_ROOT_NODE windowNode = NULL;
+    PPH_STACK_TREE_ROOT_NODE stackNode = NULL;
 
     for (ULONG i = 0; i < Context->NodeList->Count; i++)
     {
-        windowNode = Context->NodeList->Items[i];
+        stackNode = Context->NodeList->Items[i];
 
-        if (windowNode->Node.Selected)
-            return windowNode;
+        if (stackNode->Node.Selected)
+            return stackNode;
     }
 
     return NULL;
 }
 
-VOID GetSelectedThreadStackNodes(
+BOOLEAN GetSelectedThreadStackNodes(
     _In_ PPH_THREAD_STACK_CONTEXT Context,
-    _Out_ PPH_STACK_TREE_ROOT_NODE **ThreadStackNodes,
-    _Out_ PULONG NumberOfThreadStackNodes
+    _Out_ PPH_STACK_TREE_ROOT_NODE **Nodes,
+    _Out_ PULONG NumberOfNodes
     )
 {
-    PPH_LIST list;
-
-    list = PhCreateList(2);
+    PPH_LIST list = PhCreateList(2);
 
     for (ULONG i = 0; i < Context->NodeList->Count; i++)
     {
@@ -683,10 +681,17 @@ VOID GetSelectedThreadStackNodes(
         }
     }
 
-    *ThreadStackNodes = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
-    *NumberOfThreadStackNodes = list->Count;
+    if (list->Count)
+    {
+        *Nodes = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
+        *NumberOfNodes = list->Count;
+
+        PhDereferenceObject(list);
+        return TRUE;
+    }
 
     PhDereferenceObject(list);
+    return FALSE;
 }
 
 BOOLEAN PhpThreadStackTreeFilterCallback(
@@ -793,6 +798,14 @@ VOID PhShowThreadStackDialog(
     if (ProcessId == SYSTEM_PROCESS_ID && !KphIsConnected())
     {
         PhShowError2(ParentWindowHandle, PH_KPH_ERROR_TITLE, L"%s", PH_KPH_ERROR_MESSAGE);
+        return;
+    }
+
+    // The idle process has pseudo CIDs (dmex)
+    if (ProcessId == SYSTEM_IDLE_PROCESS_ID &&
+        HandleToUlong(ThreadId) < (ULONG)PhSystemBasicInformation.NumberOfProcessors)
+    {
+        PhShowStatus(ParentWindowHandle, L"Unable to open the thread.", STATUS_INVALID_CID, 0);
         return;
     }
 
@@ -1374,16 +1387,16 @@ VOID PhpSymbolProviderEventCallbackHandler(
             switch (event->ActionCode)
             {
             case CBA_DEFERRED_SYMBOL_LOAD_START:
-                statusMessage = PhFormatString(L"Loading symbols from %s...", PhGetStringOrEmpty(fileName));
+                statusMessage = PhFormatString(L"Loading symbols from %s...", PhGetStringOrDefault(fileName, L"image"));
                 break;
             case CBA_DEFERRED_SYMBOL_LOAD_COMPLETE:
-                statusMessage = PhFormatString(L"Loaded symbols from %s...", PhGetStringOrEmpty(fileName));
+                statusMessage = PhFormatString(L"Loaded symbols from %s...", PhGetStringOrDefault(fileName, L"image"));
                 break;
             case CBA_DEFERRED_SYMBOL_LOAD_FAILURE:
-                statusMessage = PhFormatString(L"Failed to load %s...", PhGetStringOrEmpty(fileName));
+                statusMessage = PhFormatString(L"Failed to load symbols from %s...", PhGetStringOrDefault(fileName, L"image"));
                 break;
             case CBA_SYMBOLS_UNLOADED:
-                statusMessage = PhFormatString(L"Unloading %s...", PhGetStringOrEmpty(fileName));
+                statusMessage = PhFormatString(L"Unloading symbols from %s...", PhGetStringOrDefault(fileName, L"image"));
                 break;
             }
 
@@ -1393,13 +1406,13 @@ VOID PhpSymbolProviderEventCallbackHandler(
         break;
     case CBA_READ_MEMORY:
         {
-            PIMAGEHLP_CBA_READ_MEMORY callbackEvent = (PIMAGEHLP_CBA_READ_MEMORY)event->EventData;
+            //PIMAGEHLP_CBA_READ_MEMORY callbackEvent = (PIMAGEHLP_CBA_READ_MEMORY)event->EventData;
             //statusMessage = PhFormatString(L"Reading %lu bytes of memory from %I64u...", callbackEvent->bytes, callbackEvent->addr);
         }
         break;
     case CBA_EVENT:
         {
-            PIMAGEHLP_CBA_EVENTW callbackEvent = (PIMAGEHLP_CBA_EVENTW)event->EventData;
+            //PIMAGEHLP_CBA_EVENTW callbackEvent = (PIMAGEHLP_CBA_EVENTW)event->EventData;
             //statusMessage = PhFormatString(L"%s", callbackEvent->desc);
         }
         break;

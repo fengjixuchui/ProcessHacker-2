@@ -5984,7 +5984,7 @@ HANDLE PhGetNamespaceHandle(
         InitializeObjectAttributes(
             &objectAttributes,
             &namespacePathUs,
-            OBJ_OPENIF,
+            OBJ_OPENIF | (WindowsVersion < WINDOWS_10 ? 0 : OBJ_DONT_REPARSE),
             NULL,
             securityDescriptor
             );
@@ -6310,6 +6310,30 @@ PLDR_DATA_TABLE_ENTRY PhFindLoaderEntry(
     }
 
     return result;
+}
+
+PLDR_DATA_TABLE_ENTRY PhFindLoaderEntryNameHash(
+    _In_ ULONG BaseNameHash
+    )
+{
+    PLDR_DATA_TABLE_ENTRY entry;
+    PLIST_ENTRY listHead;
+    PLIST_ENTRY listEntry;
+
+    listHead = &NtCurrentPeb()->Ldr->InLoadOrderModuleList;
+    listEntry = listHead->Flink;
+
+    while (listEntry != listHead)
+    {
+        entry = CONTAINING_RECORD(listEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+        if (entry->BaseNameHashValue == BaseNameHash)
+            return entry;
+
+        listEntry = listEntry->Flink;
+    }
+    
+    return NULL;
 }
 
 /**

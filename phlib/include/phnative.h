@@ -1712,6 +1712,13 @@ PhImpersonateClientOfNamedPipe(
 PHLIBAPI
 NTSTATUS
 NTAPI
+PhDisableImpersonateNamedPipe(
+    _In_ HANDLE PipeHandle
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
 PhGetNamedPipeClientComputerName(
     _In_ HANDLE PipeHandle,
     _In_ ULONG ClientComputerNameLength,
@@ -1805,6 +1812,22 @@ NTAPI
 PhGetProcessCodePage(
     _In_ HANDLE ProcessHandle,
     _Out_ PUSHORT ProcessCodePage
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetThreadLastStatusValue(
+    _In_ HANDLE ThreadHandle,
+    _In_opt_ HANDLE ProcessHandle,
+    _Out_ PNTSTATUS LastStatusValue
+    );
+
+PHLIBAPI
+BOOLEAN
+NTAPI
+PhIsFirmwareSupported(
+    VOID
     );
 
 #ifdef __cplusplus

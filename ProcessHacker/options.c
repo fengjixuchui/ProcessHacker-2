@@ -270,7 +270,7 @@ INT_PTR CALLBACK PhOptionsDialogProc(
     {
     case WM_INITDIALOG:
         {
-            OptionsTreeImageList = ImageList_Create(2, PH_SCALE_DPI(22), ILC_MASK | ILC_COLOR, 1, 1);
+            OptionsTreeImageList = PhImageListCreate(2, PH_SCALE_DPI(22), ILC_MASK | ILC_COLOR, 1, 1);
             OptionsTreeControl = GetDlgItem(hwndDlg, IDC_SECTIONTREE);
             ContainerControl = GetDlgItem(hwndDlg, IDD_CONTAINER);
 
@@ -320,7 +320,9 @@ INT_PTR CALLBACK PhOptionsDialogProc(
                     PhInvokeCallback(PhGetGeneralCallback(GeneralCallbackOptionsWindowInitializing), &pointers);
                 }
 
-                PhOptionsEnterSectionView(section);
+                TreeView_SelectItem(OptionsTreeControl, section->TreeItemHandle);
+                SetFocus(OptionsTreeControl);
+                //PhOptionsEnterSectionView(section);
                 PhOptionsOnSize();
             }
 
@@ -348,7 +350,8 @@ INT_PTR CALLBACK PhOptionsDialogProc(
             PhDereferenceObject(SectionList);
             SectionList = NULL;
 
-            if (OptionsTreeImageList) ImageList_Destroy(OptionsTreeImageList);
+            if (OptionsTreeImageList)
+                PhImageListDestroy(OptionsTreeImageList);
 
             PhUnregisterWindowCallback(hwndDlg);
 
@@ -1099,45 +1102,45 @@ NTSTATUS PhpSetExploitProtectionEnabled(
             NtClose(keyHandle);
         }
 
-#ifdef _WIN64
-        if (NT_SUCCESS(status))
-        {
-            PH_STRINGREF stringBefore;
-            PH_STRINGREF stringAfter;
-
-            if (PhSplitStringRefAtString(&keypath->sr, &replacementToken, TRUE, &stringBefore, &stringAfter))
-            {
-                PhMoveReference(&keypath, PhConcatStringRef3(&stringBefore, &wow6432Token, &stringAfter));
-
-                if (NT_SUCCESS(PhCreateKey(
-                    &keyHandle,
-                    KEY_WRITE,
-                    PH_KEY_LOCAL_MACHINE,
-                    &keypath->sr,
-                    OBJ_OPENIF,
-                    0,
-                    NULL
-                    )))
-                {
-                    status = PhSetValueKey(keyHandle, &valueName, REG_QWORD, &(ULONG64)
-                    {
-                        PROCESS_CREATION_MITIGATION_POLICY_HEAP_TERMINATE_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_BOTTOM_UP_ASLR_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_HIGH_ENTROPY_ASLR_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_EXTENSION_POINT_DISABLE_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_CONTROL_FLOW_GUARD_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_FONT_DISABLE_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_REMOTE_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_LOW_LABEL_ALWAYS_ON |
-                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON,
-                    }, sizeof(ULONG64));
-
-                    NtClose(keyHandle);
-                }
-            }
-        }
-#endif
+//#ifdef _WIN64
+//        if (NT_SUCCESS(status))
+//        {
+//            PH_STRINGREF stringBefore;
+//            PH_STRINGREF stringAfter;
+//
+//            if (PhSplitStringRefAtString(&keypath->sr, &replacementToken, TRUE, &stringBefore, &stringAfter))
+//            {
+//                PhMoveReference(&keypath, PhConcatStringRef3(&stringBefore, &wow6432Token, &stringAfter));
+//
+//                if (NT_SUCCESS(PhCreateKey(
+//                    &keyHandle,
+//                    KEY_WRITE,
+//                    PH_KEY_LOCAL_MACHINE,
+//                    &keypath->sr,
+//                    OBJ_OPENIF,
+//                    0,
+//                    NULL
+//                    )))
+//                {
+//                    status = PhSetValueKey(keyHandle, &valueName, REG_QWORD, &(ULONG64)
+//                    {
+//                        PROCESS_CREATION_MITIGATION_POLICY_HEAP_TERMINATE_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_BOTTOM_UP_ASLR_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_HIGH_ENTROPY_ASLR_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_EXTENSION_POINT_DISABLE_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_PROHIBIT_DYNAMIC_CODE_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_CONTROL_FLOW_GUARD_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_FONT_DISABLE_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_REMOTE_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_NO_LOW_LABEL_ALWAYS_ON |
+//                        PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON,
+//                    }, sizeof(ULONG64));
+//
+//                    NtClose(keyHandle);
+//                }
+//            }
+//        }
+//#endif
         PhDereferenceObject(keypath);
     }
     else
@@ -1493,7 +1496,7 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
 
             comboBoxHandle = GetDlgItem(hwndDlg, IDC_MAXSIZEUNIT);
             listviewHandle = GetDlgItem(hwndDlg, IDC_SETTINGS);
-            GeneralListviewImageList = ImageList_Create(1, PH_SCALE_DPI(22), ILC_MASK | ILC_COLOR, 1, 1);
+            GeneralListviewImageList = PhImageListCreate(1, PH_SCALE_DPI(22), ILC_MASK | ILC_COLOR, 1, 1);
 
             PhInitializeLayoutManager(&LayoutManager, hwndDlg);
             PhAddLayoutItem(&LayoutManager, GetDlgItem(hwndDlg, IDC_SEARCHENGINE), NULL, PH_ANCHOR_LEFT | PH_ANCHOR_TOP | PH_ANCHOR_RIGHT);
@@ -1556,7 +1559,7 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
                 DeleteFont(CurrentFontInstance);
 
             if (GeneralListviewImageList)
-                ImageList_Destroy(GeneralListviewImageList);
+                PhImageListDestroy(GeneralListviewImageList);
 
             PhClearReference(&NewFontSelection);
             PhClearReference(&OldTaskMgrDebugger);
@@ -2516,28 +2519,27 @@ PPH_OPTIONS_ADVANCED_ROOT_NODE GetSelectedOptionsAdvancedNode(
     _In_ PPH_OPTIONS_ADVANCED_CONTEXT Context
     )
 {
-    PPH_OPTIONS_ADVANCED_ROOT_NODE windowNode = NULL;
+    PPH_OPTIONS_ADVANCED_ROOT_NODE optionsNode = NULL;
 
     for (ULONG i = 0; i < Context->NodeList->Count; i++)
     {
-        windowNode = Context->NodeList->Items[i];
+        optionsNode = Context->NodeList->Items[i];
 
-        if (windowNode->Node.Selected)
-            return windowNode;
+        if (optionsNode->Node.Selected)
+            return optionsNode;
     }
 
     return NULL;
 }
 
-VOID GetSelectedOptionsAdvancedNodes(
+_Success_(return)
+BOOLEAN GetSelectedOptionsAdvancedNodes(
     _In_ PPH_OPTIONS_ADVANCED_CONTEXT Context,
-    _Out_ PPH_OPTIONS_ADVANCED_ROOT_NODE** PluginsNodes,
-    _Out_ PULONG NumberOfPluginsNodes
+    _Out_ PPH_OPTIONS_ADVANCED_ROOT_NODE** Nodes,
+    _Out_ PULONG NumberOfNodes
     )
 {
-    PPH_LIST list;
-
-    list = PhCreateList(2);
+    PPH_LIST list = PhCreateList(2);
 
     for (ULONG i = 0; i < Context->NodeList->Count; i++)
     {
@@ -2549,10 +2551,17 @@ VOID GetSelectedOptionsAdvancedNodes(
         }
     }
 
-    *PluginsNodes = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
-    *NumberOfPluginsNodes = list->Count;
+    if (list->Count)
+    {
+        *Nodes = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
+        *NumberOfNodes = list->Count;
+
+        PhDereferenceObject(list);
+        return TRUE;
+    }
 
     PhDereferenceObject(list);
+    return FALSE;
 }
 
 VOID InitializeOptionsAdvancedTree(
@@ -2965,7 +2974,8 @@ INT_PTR CALLBACK PhpOptionsAdvancedDlgProc(
                 PPH_OPTIONS_ADVANCED_ROOT_NODE* nodes;
                 ULONG numberOfNodes;
 
-                GetSelectedOptionsAdvancedNodes(context, &nodes, &numberOfNodes);
+                if (!GetSelectedOptionsAdvancedNodes(context, &nodes, &numberOfNodes))
+                    break;
 
                 if (numberOfNodes != 0)
                 {

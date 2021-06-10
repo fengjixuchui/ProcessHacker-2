@@ -875,19 +875,19 @@ PPHP_PROCESS_ENVIRONMENT_TREENODE PhpFindEnvironmentNode(
     _In_ PWSTR KeyPath
     )
 {
-    PHP_PROCESS_ENVIRONMENT_TREENODE lookupWindowNode;
-    PPHP_PROCESS_ENVIRONMENT_TREENODE lookupWindowNodePtr = &lookupWindowNode;
-    PPHP_PROCESS_ENVIRONMENT_TREENODE *windowNode;
+    PHP_PROCESS_ENVIRONMENT_TREENODE lookupEnvironmentNode;
+    PPHP_PROCESS_ENVIRONMENT_TREENODE lookupEnvironmentNodePtr = &lookupEnvironmentNode;
+    PPHP_PROCESS_ENVIRONMENT_TREENODE *environmentNode;
 
-    PhInitializeStringRefLongHint(&lookupWindowNode.NameText->sr, KeyPath);
+    PhInitializeStringRefLongHint(&lookupEnvironmentNode.NameText->sr, KeyPath);
 
-    windowNode = (PPHP_PROCESS_ENVIRONMENT_TREENODE*)PhFindEntryHashtable(
+    environmentNode = (PPHP_PROCESS_ENVIRONMENT_TREENODE*)PhFindEntryHashtable(
         Context->NodeHashtable,
-        &lookupWindowNodePtr
+        &lookupEnvironmentNodePtr
         );
 
-    if (windowNode)
-        return *windowNode;
+    if (environmentNode)
+        return *environmentNode;
     else
         return NULL;
 }
@@ -1194,32 +1194,29 @@ PPHP_PROCESS_ENVIRONMENT_TREENODE PhpGetSelectedEnvironmentNode(
     _In_ PPH_ENVIRONMENT_CONTEXT Context
     )
 {
-    PPHP_PROCESS_ENVIRONMENT_TREENODE windowNode = NULL;
+    PPHP_PROCESS_ENVIRONMENT_TREENODE environmentNode = NULL;
     ULONG i;
 
     for (i = 0; i < Context->NodeList->Count; i++)
     {
-        windowNode = Context->NodeList->Items[i];
+        environmentNode = Context->NodeList->Items[i];
 
-        if (windowNode->Node.Selected)
-            return windowNode;
+        if (environmentNode->Node.Selected)
+            return environmentNode;
     }
 
     return NULL;
 }
 
-VOID PhpGetSelectedEnvironmentNodes(
+BOOLEAN PhpGetSelectedEnvironmentNodes(
     _In_ PPH_ENVIRONMENT_CONTEXT Context,
-    _Out_ PPHP_PROCESS_ENVIRONMENT_TREENODE **PoolTags,
-    _Out_ PULONG NumberOfPoolTags
+    _Out_ PPHP_PROCESS_ENVIRONMENT_TREENODE **Nodes,
+    _Out_ PULONG NumberOfNodes
     )
 {
-    PPH_LIST list;
-    ULONG i;
+    PPH_LIST list = PhCreateList(2);
 
-    list = PhCreateList(2);
-
-    for (i = 0; i < Context->NodeList->Count; i++)
+    for (ULONG i = 0; i < Context->NodeList->Count; i++)
     {
         PPHP_PROCESS_ENVIRONMENT_TREENODE node = (PPHP_PROCESS_ENVIRONMENT_TREENODE)Context->NodeList->Items[i];
 
@@ -1229,10 +1226,17 @@ VOID PhpGetSelectedEnvironmentNodes(
         }
     }
 
-    *PoolTags = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
-    *NumberOfPoolTags = list->Count;
+    if (list->Count)
+    {
+        *Nodes = PhAllocateCopy(list->Items, sizeof(PVOID) * list->Count);
+        *NumberOfNodes = list->Count;
+
+        PhDereferenceObject(list);
+        return TRUE;
+    }
 
     PhDereferenceObject(list);
+    return FALSE;
 }
 
 VOID PhpInitializeEnvironmentTree(

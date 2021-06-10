@@ -1327,13 +1327,29 @@ VOID PhpFillProcessItem(
     }
 
     // CET
-    if (WindowsVersion >= WINDOWS_10_20H1 && ProcessItem->QueryHandle)
+    if (WindowsVersion >= WINDOWS_10_20H1)
     {
-        BOOLEAN cetEnabled;
-
-        if (NT_SUCCESS(PhGetProcessIsCetEnabled(ProcessItem->QueryHandle, &cetEnabled)))
+        if (ProcessItem->ProcessId == SYSTEM_PROCESS_ID)
         {
-            ProcessItem->IsCetEnabled = cetEnabled;
+            SYSTEM_SHADOW_STACK_INFORMATION shadowStackInformation;
+
+            if (NT_SUCCESS(PhGetSystemShadowStackInformation(&shadowStackInformation)))
+            {
+                ProcessItem->IsCetEnabled = shadowStackInformation.KernelCetEnabled; // Kernel CET is always strict (TheEragon)
+            }
+        }
+        else
+        {
+            if (ProcessItem->QueryHandle)
+            {
+                BOOLEAN cetEnabled;
+                BOOLEAN cetStrictModeEnabled;
+
+                if (NT_SUCCESS(PhGetProcessIsCetEnabled(ProcessItem->QueryHandle, &cetEnabled, &cetStrictModeEnabled)))
+                {
+                    ProcessItem->IsCetEnabled = cetEnabled;
+                }
+            }
         }
     }
 
@@ -3070,21 +3086,19 @@ VOID PhProcessImageListInitialization(
 
     PhImageListItemType = PhCreateObjectType(L"ImageListItem", 0, PhpImageListItemDeleteProcedure);
 
-    PhProcessLargeImageList = ImageList_Create(PhLargeIconSize.X, PhLargeIconSize.Y, ILC_MASK | ILC_COLOR32, 100, 100);
-    PhProcessSmallImageList = ImageList_Create(PhSmallIconSize.X, PhSmallIconSize.Y, ILC_MASK | ILC_COLOR32, 100, 100);
-    ImageList_SetBkColor(PhProcessLargeImageList, CLR_NONE);
-    ImageList_SetBkColor(PhProcessSmallImageList, CLR_NONE);
+    PhProcessLargeImageList = PhImageListCreate(PhLargeIconSize.X, PhLargeIconSize.Y, ILC_MASK | ILC_COLOR32, 100, 100);
+    PhProcessSmallImageList = PhImageListCreate(PhSmallIconSize.X, PhSmallIconSize.Y, ILC_MASK | ILC_COLOR32, 100, 100);
+    PhImageListSetBkColor(PhProcessLargeImageList, CLR_NONE);
+    PhImageListSetBkColor(PhProcessSmallImageList, CLR_NONE);
 
     PhGetStockApplicationIcon(&iconSmall, &iconLarge);
-    ImageList_AddIcon(PhProcessLargeImageList, iconLarge);
-    ImageList_AddIcon(PhProcessSmallImageList, iconSmall);
-    DestroyIcon(iconLarge);
-    DestroyIcon(iconSmall);
+    PhImageListAddIcon(PhProcessLargeImageList, iconLarge);
+    PhImageListAddIcon(PhProcessSmallImageList, iconSmall);
 
     iconLarge = PhLoadIcon(PhInstanceHandle, MAKEINTRESOURCE(IDI_COG), PH_LOAD_ICON_SIZE_LARGE, 0, 0);
     iconSmall = PhLoadIcon(PhInstanceHandle, MAKEINTRESOURCE(IDI_COG), PH_LOAD_ICON_SIZE_SMALL, 0, 0);
-    ImageList_AddIcon(PhProcessLargeImageList, iconLarge);
-    ImageList_AddIcon(PhProcessSmallImageList, iconSmall);
+    PhImageListAddIcon(PhProcessLargeImageList, iconLarge);
+    PhImageListAddIcon(PhProcessSmallImageList, iconSmall);
     DestroyIcon(iconLarge);
     DestroyIcon(iconSmall);
 }
@@ -3169,8 +3183,8 @@ PPH_IMAGELIST_ITEM PhImageListExtractIcon(
 
     if (largeIcon && smallIcon)
     {
-        newentry->LargeIconIndex = ImageList_AddIcon(PhProcessLargeImageList, largeIcon);
-        newentry->SmallIconIndex = ImageList_AddIcon(PhProcessSmallImageList, smallIcon);
+        newentry->LargeIconIndex = PhImageListAddIcon(PhProcessLargeImageList, largeIcon);
+        newentry->SmallIconIndex = PhImageListAddIcon(PhProcessSmallImageList, smallIcon);
         DestroyIcon(smallIcon);
         DestroyIcon(largeIcon);
     }
@@ -3230,7 +3244,7 @@ VOID PhDrawProcessIcon(
     {
         if (PhProcessLargeImageList)
         {
-            ImageList_Draw(
+            PhImageListDrawIcon(
                 PhProcessLargeImageList,
                 Index,
                 hdc,
@@ -3244,7 +3258,7 @@ VOID PhDrawProcessIcon(
     {
         if (PhProcessSmallImageList)
         {
-            ImageList_Draw(
+            PhImageListDrawIcon(
                 PhProcessSmallImageList,
                 Index,
                 hdc,
@@ -3263,10 +3277,28 @@ HICON PhGetImageListIcon(
 {
     if (Large)
     {
-        return ImageList_GetIcon(PhProcessLargeImageList, (ULONG)Index, ILD_NORMAL | ILD_TRANSPARENT);
+        if (PhProcessLargeImageList)
+        {
+            return PhImageListGetIcon(
+                PhProcessLargeImageList,
+                (ULONG)Index,
+                ILD_NORMAL | ILD_TRANSPARENT
+                );
+        }
+    }
+    else
+    {
+        if (PhProcessSmallImageList)
+        {
+            return PhImageListGetIcon(
+                PhProcessSmallImageList,
+                (ULONG)Index,
+                ILD_NORMAL | ILD_TRANSPARENT
+                );
+        }
     }
 
-    return ImageList_GetIcon(PhProcessSmallImageList, (ULONG)Index, ILD_NORMAL | ILD_TRANSPARENT);
+    return NULL;
 }
 
 HIMAGELIST PhGetProcessSmallImageList(

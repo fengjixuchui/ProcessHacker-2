@@ -169,11 +169,26 @@ PPH_MODULE_PROVIDER PhCreateModuleProvider(
 
         if (WindowsVersion >= WINDOWS_10_20H1)
         {
-            BOOLEAN cetEnabled;
-
-            if (NT_SUCCESS(PhGetProcessIsCetEnabled(moduleProvider->ProcessHandle, &cetEnabled)))
+            if (moduleProvider->ProcessId == SYSTEM_PROCESS_ID)
             {
-                moduleProvider->CetEnabled = cetEnabled;
+                SYSTEM_SHADOW_STACK_INFORMATION shadowStackInformation;
+
+                if (NT_SUCCESS(PhGetSystemShadowStackInformation(&shadowStackInformation)))
+                {
+                    moduleProvider->CetEnabled = !!shadowStackInformation.KernelCetEnabled;
+                    moduleProvider->CetStrictModeEnabled = TRUE; // Kernel CET is always strict (TheEragon)
+                }
+            }
+            else
+            {
+                BOOLEAN cetEnabled;
+                BOOLEAN cetStrictModeEnabled;
+
+                if (NT_SUCCESS(PhGetProcessIsCetEnabled(moduleProvider->ProcessHandle, &cetEnabled, &cetStrictModeEnabled)))
+                {
+                    moduleProvider->CetEnabled = cetEnabled;
+                    moduleProvider->CetStrictModeEnabled = cetStrictModeEnabled;
+                }
             }
         }
     }
@@ -760,6 +775,10 @@ VOID PhModuleProviderUpdate(
             // remove CF Guard flag if CFG mitigation is not enabled for the process
             if (!moduleProvider->ControlFlowGuardEnabled)
                 moduleItem->ImageDllCharacteristics &= ~IMAGE_DLLCHARACTERISTICS_GUARD_CF;
+
+            // if process has strict mode enabled add CET flag to module
+            if (moduleProvider->CetStrictModeEnabled)
+                moduleItem->ImageDllCharacteristicsEx |= IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT;
 
             // remove CET flag if CET is not enabled for the process
             if (!moduleProvider->CetEnabled)

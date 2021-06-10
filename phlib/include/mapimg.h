@@ -449,17 +449,17 @@ typedef struct _PH_MAPPED_IMAGE_CFG
     PULONGLONG GuardFunctionTable;
     ULONGLONG NumberOfGuardFunctionEntries;
 
-    PULONGLONG GuardAdressIatTable; // not currently used
+    PULONGLONG GuardAdressIatTable;
     ULONGLONG NumberOfGuardAdressIatEntries;
 
-    PULONGLONG GuardLongJumpTable; // not currently used
+    PULONGLONG GuardLongJumpTable;
     ULONGLONG NumberOfGuardLongJumpEntries;
 } PH_MAPPED_IMAGE_CFG, *PPH_MAPPED_IMAGE_CFG;
 
 typedef enum _CFG_ENTRY_TYPE
 {
     ControlFlowGuardFunction,
-    ControlFlowGuardtakenIatEntry,
+    ControlFlowGuardTakenIatEntry,
     ControlFlowGuardLongJump
 } CFG_ENTRY_TYPE;
 
@@ -566,6 +566,15 @@ NTAPI
 PhGetMappedImageProdIdHeader(
     _In_ PPH_MAPPED_IMAGE MappedImage,
     _Out_ PPH_MAPPED_IMAGE_PRODID ProdIdHeader
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetMappedImageProdIdExtents(
+    _In_ PPH_MAPPED_IMAGE MappedImage,
+    _Out_ PULONG ProdIdHeaderStart,
+    _Out_ PULONG ProdIdHeaderEnd
     );
 
 typedef struct _PH_IMAGE_DEBUG_ENTRY

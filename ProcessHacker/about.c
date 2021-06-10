@@ -91,12 +91,16 @@ static INT_PTR CALLBACK PhpAboutDlgProc(
                 );
 
             PhSetDialogFocus(hwndDlg, GetDlgItem(hwndDlg, IDOK));
+            PhRegisterWindowCallback(hwndDlg, PH_PLUGIN_WINDOW_EVENT_TYPE_TOPMOST, NULL);
 
+            if (PhEnableThemeSupport)
+                PhInitializeWindowThemeStaticControl(GetDlgItem(hwndDlg, IDC_FILEICON));
             PhInitializeWindowTheme(hwndDlg, PhEnableThemeSupport);
         }
         break;
     case WM_DESTROY:
         {
+            PhUnregisterWindowCallback(hwndDlg);
             PhUnregisterDialog(PhAboutWindowHandle);
             PhAboutWindowHandle = NULL;
         }
@@ -144,7 +148,7 @@ static INT_PTR CALLBACK PhpAboutDlgProc(
 }
 
 VOID PhShowAboutDialog(
-    VOID
+    _In_ HWND ParentWindowHandle
     )
 {
     if (!PhAboutWindowHandle)
@@ -152,7 +156,7 @@ VOID PhShowAboutDialog(
         PhAboutWindowHandle = PhCreateDialog(
             PhInstanceHandle,
             MAKEINTRESOURCE(IDD_ABOUT),
-            NULL,
+            PhCsForceNoParent ? NULL : ParentWindowHandle,
             PhpAboutDlgProc,
             NULL
             );
